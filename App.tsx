@@ -988,6 +988,8 @@ export default function App() {
           <div className="flex flex-col items-center justify-center gap-2 text-slate-500 text-sm">
             <p>Data provided via Google Gemini analysis of:</p>
             <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 max-w-2xl">
+              <a href="https://myanimelist.net" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">MyAnimeList</a>
+              <span className="text-slate-700">•</span>
               <a href="https://senpai.moe" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Senpai.moe</a>
               <span className="text-slate-700">•</span>
               <a href="https://animeschedule.net" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">AnimeSchedule</a>

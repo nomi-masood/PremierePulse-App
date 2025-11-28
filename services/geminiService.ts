@@ -27,7 +27,7 @@ export const fetchDailyReleases = async (date: Date): Promise<FetchResponse> => 
     - **Broad Lifestyle & News**: "What to watch today ${formattedDate}", "New movies and shows releasing ${formattedDate} Vulture Collider".
     - **Streaming Updates**: "New on Netflix ${formattedDate}", "New on Disney+ ${formattedDate}", "New on Amazon Prime ${formattedDate}".
     - **Aggregators (Golden Source)**: "site:justwatch.com new ${formattedDate}", "site:tvmaze.com schedule ${formattedDate}".
-    - **Anime (Strictly NO MyAnimeList)**: "site:senpai.moe calendar ${isoDate}", "site:animeschedule.net ${isoDate}", "site:livechart.me schedule ${formattedDate}", "site:animenewsnetwork.com daily schedule", "Crunchyroll simulcast calendar ${formattedDate}", "site:subsplease.org schedule".
+    - **Anime (PRIMARY SOURCE)**: "site:myanimelist.net/anime/season/schedule", "site:senpai.moe calendar ${isoDate}", "site:animeschedule.net ${isoDate}", "site:livechart.me schedule ${formattedDate}", "Crunchyroll simulcast calendar ${formattedDate}", "site:subsplease.org schedule".
     - **Asian Drama**: "site:mydramalist.com calendar ${formattedDate}", "site:viki.com coming soon".
     - **Cinema/Theatrical**: "site:rottentomatoes.com opening this week", "site:imdb.com release dates ${formattedDate}".
     - **Community/Torrents**: "site:nyaa.si ${isoDate}", "site:en.yts-official.org ${isoDate}", "site:1337x.to ${formattedDate} movies".
@@ -35,17 +35,17 @@ export const fetchDailyReleases = async (date: Date): Promise<FetchResponse> => 
     
     ### 2. TARGET SOURCES:
     - **Streaming**: Netflix, Amazon Prime, Disney+, Hulu, Crunchyroll, HIDIVE, Viki.
-    - **Aggregators**: JustWatch, LiveChart.me, Senpai.moe, AnimeSchedule, MyDramaList, TVMaze, Rotten Tomatoes, AniList, Kitsu, AnimeNewsNetwork.
+    - **Aggregators**: MyAnimeList, JustWatch, LiveChart.me, Senpai.moe, AnimeSchedule, MyDramaList, TVMaze, Rotten Tomatoes, AniList, Kitsu, AnimeNewsNetwork.
     - **Databases**: Trakt.tv, TMDB, IMDB.
     - **Community**: Nyaa.si, SubsPlease, YTS, 1337x.
     
     ### 3. STRICT REQUIREMENTS:
     - **Accuracy**: Only include items that are confirmed for TODAY. Check the year carefully.
-    - **Anime**: Look for "Episode X" to confirm it's airing today. Use English titles (e.g., "Frieren") but allow Romaji if that's the primary known title.
+    - **Anime (MyAnimeList API Standards)**: Prioritize data matching 'https://api.myanimelist.net/v2' standards. Look for specific episode numbers airing today. Use English titles (e.g., "Frieren") where possible.
     - **Images**: You MUST find a high-quality official poster URL for every item. Prioritize "m.media-amazon.com" (IMDB) or TMDB image links. Do not use generic site logos.
     - **Quantity**: Try to find at least 15-20 unique items across all categories (Anime, Drama, Movie).
     - **Deduplication**: Do not list the same show twice (e.g. once from Trakt, once from Nyaa) unless it is a different season/movie.
-    - **Links**: You MUST provide a direct link to the official source (Netflix, Crunchyroll, IMDB page, or Torrent page).
+    - **Links**: You MUST provide a direct link to the official source (Netflix, Crunchyroll, IMDB page, MyAnimeList page, or Torrent page).
     
     ### 4. OUTPUT FORMAT:
     Return strictly a JSON array wrapped in a markdown code block (e.g., \`\`\`json [ ... ] \`\`\`).
@@ -56,7 +56,7 @@ export const fetchDailyReleases = async (date: Date): Promise<FetchResponse> => 
       "category": "Anime" | "Drama" | "Movie",
       "episode": "S01E05" (or 'Ep 5' for anime) or null if Movie,
       "time": "Release time (e.g. '9:00 PM EST') or 'Available now'",
-      "platform": "Netflix, Crunchyroll, Nyaa, YTS, Viki, etc.",
+      "platform": "Netflix, Crunchyroll, Nyaa, YTS, Viki, MyAnimeList, etc.",
       "description": "Brief, engaging 1-sentence synopsis.",
       "imageUrl": "High-res URL of the official poster.",
       "link": "Official URL for the release (e.g. Netflix, Crunchyroll, IMDB page, or Torrent page)"
