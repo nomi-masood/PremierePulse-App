@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { fetchDailyReleases } from './services/geminiService';
 import { ReleaseItem, Category, FetchResponse, GroundingMetadata } from './types';
 import { 
   IconAnime, 
   IconDrama, 
   IconMovie, 
+  IconSeries,
+  IconDocumentary,
   IconCalendar, 
   IconBell, 
   IconBellActive, 
@@ -29,6 +31,16 @@ interface AppSettings {
   alertTiming: 'at-release' | '15-min-before' | '1-hour-before';
   soundEnabled: boolean;
 }
+
+// --- Constants ---
+
+const FALLBACK_IMAGES = {
+  Anime: "https://images.unsplash.com/photo-1560167164-db0c40697f26?q=60&w=400&auto=format&fit=crop", // Japanese Lanterns/Street (Distinct Anime Vibe)
+  Drama: "https://images.unsplash.com/photo-1507676184212-d0370baf5502?q=60&w=400&auto=format&fit=crop", // Theatrical Curtains (Dramatic)
+  Movie: "https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=60&w=400&auto=format&fit=crop", // Dark Cinema Screen (Cinematic)
+  Series: "https://images.unsplash.com/photo-1522869635100-894668ed3a63?q=60&w=400&auto=format&fit=crop", // TV Screen
+  Documentary: "https://images.unsplash.com/photo-1505664194779-8beaceb93744?q=60&w=400&auto=format&fit=crop" // Nature/Lens
+};
 
 // --- Helper Hooks ---
 
@@ -84,10 +96,8 @@ const getLevenshteinDistance = (a: string, b: string): number => {
       } else {
         matrix[i][j] = Math.min(
           matrix[i - 1][j - 1] + 1, // deletion
-          Math.min(
-            matrix[i][j - 1] + 1, // insertion
-            matrix[i - 1][j] + 1 // substitution
-          )
+          matrix[i][j - 1] + 1, // insertion
+          matrix[i - 1][j] + 1 // substitution
         );
       }
     }
@@ -96,16 +106,47 @@ const getLevenshteinDistance = (a: string, b: string): number => {
   return matrix[b.length][a.length];
 };
 
-// Helper to normalize strings: remove accents, lowercase, replace punctuation with space
+// Helper to normalize strings: remove accents, lowercase, aggressively replace punctuation
 const normalizeStr = (str: string) => 
   (str || "").normalize("NFD")
      .replace(/[\u0300-\u036f]/g, "")
      .toLowerCase()
-     .replace(/[^a-z0-9\s]/g, " ") // Replace special chars with space to handle "Spider-Man" vs "Spider Man"
+     // Replace all non-alphanumeric chars with spaces to treat them as delimiters
+     .replace(/[^a-z0-9]/g, " ") 
      .replace(/\s+/g, " ") // Collapse multiple spaces
      .trim();
 
+// Tokenize string into an array of words
+const tokenize = (str: string) => normalizeStr(str).split(' ').filter(t => t.length > 0);
+
 // --- Helper Components ---
+
+const HighlightText = ({ text, highlight }: { text: string; highlight: string }) => {
+  if (!highlight || !highlight.trim()) {
+    return <>{text}</>;
+  }
+  
+  // Simple highlight based on basic words interaction, better handled via regex on the original text
+  // We try to match any of the words in the query
+  const words = highlight.trim().split(/\s+/).filter(w => w.length > 0).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (words.length === 0) return <>{text}</>;
+
+  const pattern = `(${words.join('|')})`;
+  const regex = new RegExp(pattern, 'gi');
+  const parts = text.split(regex);
+  
+  return (
+    <>
+      {parts.map((part, i) => 
+        regex.test(part) ? (
+          <span key={i} className="bg-amber-500/40 text-amber-100 rounded px-0.5 box-decoration-clone shadow-sm shadow-amber-900/20">{part}</span>
+        ) : (
+          part
+        )
+      )}
+    </>
+  );
+};
 
 const FilterTab = ({ 
   active, 
@@ -155,12 +196,8 @@ const SettingsModal = ({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-        {/* Backdrop */}
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-        
-        {/* Modal Content */}
         <div className="relative bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-            {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-slate-800 bg-slate-900/50">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                     <IconSettings className="w-5 h-5 text-indigo-400" />
@@ -170,10 +207,7 @@ const SettingsModal = ({
                     <IconX className="w-5 h-5" />
                 </button>
             </div>
-
-            {/* Body */}
             <div className="p-6 space-y-8 overflow-y-auto custom-scrollbar">
-                {/* Master Toggle */}
                 <div className="flex items-center justify-between">
                     <div>
                         <label className="text-base font-medium text-slate-200 block">Enable Notifications</label>
@@ -186,55 +220,30 @@ const SettingsModal = ({
                         <span className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.notificationsEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
                     </button>
                 </div>
-
-                {/* Timing */}
                 <div className={`space-y-3 transition-opacity duration-300 ${settings.notificationsEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-                    <label className="text-sm font-medium text-slate-300 block">Alert Timing</label>
+                    <label className="text-sm font-medium text-slate-300 block mb-2">Alert Timing</label>
                     <div className="grid grid-cols-1 gap-2">
                         {[
-                            { id: 'at-release', label: 'At time of release' },
+                            { id: 'at-release', label: 'At exact release time' },
                             { id: '15-min-before', label: '15 minutes before' },
                             { id: '1-hour-before', label: '1 hour before' }
                         ].map((opt) => (
                             <button
                                 key={opt.id}
-                                onClick={() => onUpdate({...settings, alertTiming: opt.id as any})}
-                                className={`px-4 py-3 rounded-lg text-sm text-left border transition-all ${
-                                    settings.alertTiming === opt.id 
-                                    ? 'bg-indigo-600/10 border-indigo-500/50 text-indigo-300' 
-                                    : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-800'
-                                }`}
+                                onClick={() => onUpdate({ ...settings, alertTiming: opt.id as any })}
+                                className={`flex items-center px-4 py-3 rounded-xl border text-sm font-medium transition-all ${settings.alertTiming === opt.id ? 'bg-indigo-600/10 border-indigo-500 text-indigo-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600'}`}
                             >
-                                <div className="flex items-center justify-between">
-                                  {opt.label}
-                                  {settings.alertTiming === opt.id && <div className="w-2 h-2 rounded-full bg-indigo-500" />}
+                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center mr-3 ${settings.alertTiming === opt.id ? 'border-indigo-500' : 'border-slate-500'}`}>
+                                    {settings.alertTiming === opt.id && <div className="w-2 h-2 rounded-full bg-indigo-500" />}
                                 </div>
+                                {opt.label}
                             </button>
                         ))}
                     </div>
                 </div>
-
-                {/* Sound */}
-                 <div className={`flex items-center justify-between transition-opacity duration-300 ${settings.notificationsEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-                    <div>
-                        <label className="text-sm font-medium text-slate-300 block">Notification Sound</label>
-                        <p className="text-xs text-slate-500 mt-1">Play a sound when notified</p>
-                    </div>
-                    <button 
-                        onClick={() => onUpdate({...settings, soundEnabled: !settings.soundEnabled})}
-                        className={`w-12 h-6 rounded-full transition-colors relative focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${settings.soundEnabled ? 'bg-indigo-600' : 'bg-slate-700'}`}
-                    >
-                         <span className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.soundEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
-                    </button>
-                </div>
             </div>
-
-            {/* Footer */}
-            <div className="p-6 border-t border-slate-800 bg-slate-900/50 flex justify-end">
-                <button 
-                    onClick={onClose}
-                    className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors shadow-lg shadow-indigo-500/20"
-                >
+            <div className="p-6 border-t border-slate-800 bg-slate-900/50">
+                <button onClick={onClose} className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors shadow-lg shadow-indigo-500/20">
                     Done
                 </button>
             </div>
@@ -247,39 +256,37 @@ const ConfirmationModal = ({
   isOpen,
   onClose,
   onConfirm,
-  title,
-  message
+  title
 }: {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => void;
   title: string;
-  message: string;
 }) => {
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-4 text-amber-400">
-            <IconAlertTriangle className="w-8 h-8" />
-            <h3 className="text-lg font-bold text-white">{title}</h3>
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
+        <div className="flex flex-col items-center text-center space-y-4">
+          <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-500">
+            <IconAlertTriangle className="w-6 h-6" />
           </div>
-          <p className="text-slate-300 text-sm leading-relaxed mb-6">
-            {message}
+          <h3 className="text-lg font-bold text-white">Disable Notifications?</h3>
+          <p className="text-sm text-slate-400">
+            Are you sure you want to stop receiving notifications for <span className="text-slate-200 font-medium">{title}</span>?
           </p>
-          <div className="flex gap-3 justify-end">
-            <button
+          <div className="flex gap-3 w-full mt-2">
+            <button 
               onClick={onClose}
-              className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition-colors"
+              className="flex-1 py-2.5 rounded-xl border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors text-sm font-medium"
             >
               Cancel
             </button>
-            <button
-              onClick={onConfirm}
-              className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium transition-colors shadow-lg shadow-red-500/20"
+            <button 
+              onClick={() => { onConfirm(); onClose(); }}
+              className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white transition-colors text-sm font-medium shadow-lg shadow-red-500/20"
             >
               Disable
             </button>
@@ -290,754 +297,671 @@ const ConfirmationModal = ({
   );
 };
 
-interface ReleaseCardProps {
-  item: ReleaseItem;
-  isNotified: boolean;
-  isInWatchlist: boolean;
-  onToggleNotify: (id: string, title: string) => void | Promise<void>;
-  onToggleWatchlist: (id: string) => void;
-}
+// --- ReleaseCard Component ---
 
-// Fallback images from Unsplash for when specific content fails to load
-const FALLBACK_IMAGES = {
-  // Anime: Tokyo Neon/Cyberpunk aesthetic (Vibrant, Japan)
-  Anime: "https://images.unsplash.com/photo-1542051841857-5f90071e7989?q=80&w=800&auto=format&fit=crop", 
-  // Drama: Theater curtain / Dramatic stage lighting (Moody, Red)
-  Drama: "https://images.unsplash.com/photo-1507676184212-d037095485c0?q=80&w=800&auto=format&fit=crop", 
-  // Movie: Film reels / Classic cinema projector (Cinematic, Dark)
-  Movie: "https://images.unsplash.com/photo-1478720568477-152d9b164e63?q=80&w=800&auto=format&fit=crop", 
-  // Generic: Abstract Dark Texture
-  All: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=800&auto=format&fit=crop" 
-};
-
-type ImageState = 'primary' | 'bing' | 'unsplash' | 'error';
-
-const ReleaseCard: React.FC<ReleaseCardProps> = ({ 
+const ReleaseCard = React.memo(({ 
   item, 
   isNotified, 
-  isInWatchlist, 
-  onToggleNotify, 
-  onToggleWatchlist
+  onToggleNotify,
+  onRemoveNotify,
+  isWatchlisted,
+  onToggleWatchlist,
+  searchQuery
+}: { 
+  item: ReleaseItem; 
+  isNotified: boolean; 
+  onToggleNotify: () => void;
+  onRemoveNotify: () => void;
+  isWatchlisted: boolean;
+  onToggleWatchlist: () => void;
+  searchQuery?: string;
 }) => {
-  const [imgLoading, setImgLoading] = useState(true);
-  
-  // Initialize state based on whether we have a primary image
-  const [imageState, setImageState] = useState<ImageState>(() => {
-    return item.imageUrl ? 'primary' : 'bing';
-  });
+  // Use 'primary' | 'bing' | 'unsplash' | 'fallback' to determine source
+  const [imgSrcType, setImgSrcType] = useState<'primary' | 'bing' | 'unsplash' | 'fallback'>('primary');
+  // Track if the CURRENT img source has finished loading
+  const [isImgLoaded, setIsImgLoaded] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
-  // Sync state if prop changes (e.g. data refresh)
+  // Initialize state based on item availability
   useEffect(() => {
-    setImageState(item.imageUrl ? 'primary' : 'bing');
-    setImgLoading(true);
+    setIsImgLoaded(false);
+    // If no URL provided by API, skip straight to Bing proxy to save time
+    if (!item.imageUrl) {
+      setImgSrcType('bing');
+    } else {
+      setImgSrcType('primary');
+    }
   }, [item.imageUrl, item.id]);
 
-  const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-  const getCategoryColor = (cat: string) => {
-    switch (cat) {
-      case 'Anime': return 'bg-pink-500/20 text-pink-200 border-pink-500/30';
-      case 'Drama': return 'bg-purple-500/20 text-purple-200 border-purple-500/30';
-      case 'Movie': return 'bg-amber-500/20 text-amber-200 border-amber-500/30';
-      default: return 'bg-slate-500/20 text-slate-200 border-slate-500/30';
-    }
-  };
-
-  const renderFallbackIcon = () => {
-    const className = "w-16 h-16 opacity-10 text-white";
-    switch (item.category) {
-      case 'Anime': return <IconAnime className={className} />;
-      case 'Drama': return <IconDrama className={className} />;
-      case 'Movie': return <IconMovie className={className} />;
-      default: return <IconCalendar className={className} />;
-    }
-  };
-
-  // Determine current image source based on state machine
-  const currentImageSrc = useMemo(() => {
-    switch (imageState) {
-      case 'primary':
-        return item.imageUrl;
-      case 'bing':
-        // Request higher resolution (w=800) for better quality
-        return `https://tse2.mm.bing.net/th?q=${encodeURIComponent(item.title + ' poster')}&w=800&h=450&c=7&rs=1&p=0`;
-      case 'unsplash':
-        return FALLBACK_IMAGES[item.category as keyof typeof FALLBACK_IMAGES] || FALLBACK_IMAGES['All'];
-      default:
-        return undefined;
-    }
-  }, [imageState, item.imageUrl, item.title, item.category]);
-
-  const handleImageError = () => {
-    setImgLoading(true); // Reset loading state for the next attempt
-    if (imageState === 'primary') {
-      setImageState('bing');
-    } else if (imageState === 'bing') {
-      setImageState('unsplash');
+  const handleNotifyClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isNotified) {
+      onRemoveNotify();
     } else {
-      setImageState('error');
-      setImgLoading(false); // Stop loading if we hit the error state
+      onToggleNotify();
     }
   };
 
-  const handleImageLoad = () => {
-    setImgLoading(false);
+  const handleWatchlistClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleWatchlist();
   };
+
+  // Get source-specific image or search proxy
+  const getImgSrc = () => {
+    if (imgSrcType === 'primary') return item.imageUrl;
+    // Fallback 1: Bing Image Proxy for exact match
+    if (imgSrcType === 'bing') {
+      const query = encodeURIComponent(`${item.title} ${item.category} poster vertical`);
+      // Use slightly smaller w/h to ensure speed, c=7 smart crop
+      return `https://tse2.mm.bing.net/th?q=${query}&w=400&h=600&c=7&rs=1&p=0&dpr=2&pid=1.7&mkt=en-US&adlt=moderate`;
+    }
+    // Fallback 2: Optimized Unsplash abstract based on category
+    if (imgSrcType === 'unsplash') return FALLBACK_IMAGES[item.category] || FALLBACK_IMAGES.Movie;
+    return undefined; 
+  };
+
+  const handleError = () => {
+    // Determine next state in waterfall
+    if (imgSrcType === 'primary') setImgSrcType('bing');
+    else if (imgSrcType === 'bing') setImgSrcType('unsplash');
+    else setImgSrcType('fallback');
+    
+    // Reset loaded status so skeleton shows for the new source attempt
+    setIsImgLoaded(false);
+  };
+
+  // Timezone formatting
+  const localTime = useMemo(() => {
+    if (!item.time) return null;
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      return `${tz}`;
+    } catch(e) { return null; }
+  }, [item.time]);
 
   return (
-    <div className="group relative rounded-xl overflow-hidden border border-slate-700/50 hover:border-indigo-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-indigo-500/20 hover:scale-[1.02] hover:-translate-y-1 flex flex-col h-full bg-slate-900">
-      
-      {/* --- Background System --- */}
-      <div className="absolute inset-0 -z-10 bg-slate-900">
-        {/* Gradient Base */}
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-800/80 via-slate-900 to-black" />
-        
-        {/* Decorative Glows */}
-        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 rounded-full bg-indigo-500/10 blur-3xl opacity-60" />
-        <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-64 h-64 rounded-full bg-cyan-500/5 blur-3xl opacity-60" />
-
-        {/* Abstract Tech Pattern Overlay */}
-        <div 
-          className="absolute inset-0 opacity-[0.04]" 
-          style={{ 
-            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-            maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1), rgba(0,0,0,0))' 
-          }} 
-        />
+    <div 
+      className="group relative bg-slate-800/50 rounded-2xl border border-slate-700/50 overflow-hidden hover:scale-[1.02] hover:shadow-2xl hover:shadow-indigo-500/20 hover:border-indigo-500/50 transition-all duration-300 flex flex-col h-full"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Abstract Grid Pattern Overlay */}
+      <div className="absolute inset-0 opacity-[0.03] pointer-events-none z-0" 
+           style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '24px 24px' }}>
       </div>
 
-      <div 
-        className="relative aspect-video overflow-hidden bg-slate-900 z-10 block group/image"
-      >
-        {/* Skeleton Loader */}
-        {imgLoading && imageState !== 'error' && (
-          <div className="absolute inset-0 bg-slate-800 animate-pulse z-20 flex items-center justify-center border-b border-slate-700/50">
-            <IconLoader className="w-8 h-8 text-slate-600 animate-spin opacity-50" />
-          </div>
-        )}
+      {/* Image Container */}
+      <div className="relative aspect-[2/3] w-full overflow-hidden bg-slate-900">
+        {/* Skeleton Loader - Visible when image is not loaded AND we aren't in final fallback mode */}
+        <div className={`absolute inset-0 z-10 bg-slate-800 flex items-center justify-center transition-opacity duration-500 ${!isImgLoaded && imgSrcType !== 'fallback' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+          <div className="absolute inset-0 bg-gradient-to-tr from-slate-800 via-slate-700 to-slate-800 animate-pulse bg-[length:200%_200%]" />
+          <IconLoader className="w-8 h-8 text-indigo-500 animate-spin relative z-10" />
+        </div>
 
-        {imageState !== 'error' && currentImageSrc ? (
+        {imgSrcType !== 'fallback' ? (
           <img 
-            src={currentImageSrc} 
+            key={`${item.id}-${imgSrcType}`} // Force re-mount on source switch
+            src={getImgSrc()} 
             alt={item.title}
-            className={`w-full h-full object-cover transform transition-all duration-700 ease-in-out ${
-              imgLoading 
-                ? 'opacity-0 scale-95 blur-sm' 
-                : 'opacity-80 group-hover:opacity-100 scale-100 group-hover:scale-105 blur-0'
-            }`}
+            className={`w-full h-full object-cover transition-all duration-700 ${!isImgLoaded ? 'opacity-0 scale-105 blur-sm' : 'opacity-100 scale-100 blur-0'}`}
+            onLoad={() => setIsImgLoaded(true)}
+            onError={handleError}
             loading="lazy"
-            onLoad={handleImageLoad}
-            onError={handleImageError}
+            decoding="async"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-slate-800/50">
-            {renderFallbackIcon()}
+          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-slate-600 p-4 text-center">
+            {item.category === 'Anime' ? <IconAnime className="w-12 h-12 mb-2 opacity-50" /> :
+             item.category === 'Drama' ? <IconDrama className="w-12 h-12 mb-2 opacity-50" /> :
+             item.category === 'Movie' ? <IconMovie className="w-12 h-12 mb-2 opacity-50" /> :
+             item.category === 'Series' ? <IconSeries className="w-12 h-12 mb-2 opacity-50" /> :
+             <IconDocumentary className="w-12 h-12 mb-2 opacity-50" />}
+            <span className="text-xs uppercase tracking-wider font-medium opacity-50">{item.category}</span>
           </div>
         )}
 
-        {/* Info Overlay (Visible on Hover) */}
-        <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md opacity-0 group-hover/image:opacity-100 transition-opacity duration-300 z-40 p-6 flex flex-col justify-center text-center overflow-hidden">
-          <div className="overflow-y-auto custom-scrollbar max-h-full pr-1">
-             <div className="flex items-center justify-center gap-2 mb-3 text-indigo-400">
-               <IconInfo className="w-4 h-4" />
-               <span className="text-xs font-bold uppercase tracking-wider">Synopsis</span>
-             </div>
-             <p className="text-slate-200 text-sm leading-relaxed mb-4">
-               {item.description || "No detailed synopsis available for this release."}
-             </p>
-             <div className="flex flex-wrap justify-center gap-2 mt-auto">
-               <span className="text-[10px] px-2 py-1 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                 {item.category}
-               </span>
-               {item.platform && (
-                 <span className="text-[10px] px-2 py-1 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                   {item.platform}
-                 </span>
-               )}
-               {item.episode && (
-                 <span className="text-[10px] px-2 py-1 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                   {item.episode}
-                 </span>
-               )}
-             </div>
+        {/* Gradient Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent opacity-90" />
+
+        {/* Hover Detail Overlay */}
+        <div className={`absolute inset-0 bg-slate-900/80 backdrop-blur-sm p-6 flex flex-col justify-center transition-all duration-300 ${isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
+          <h4 className="text-sm font-semibold text-indigo-300 uppercase tracking-wider mb-2">Synopsis</h4>
+          <p className="text-slate-300 text-sm leading-relaxed line-clamp-6">
+            <HighlightText text={item.description || "No description available for this release."} highlight={searchQuery || ''} />
+          </p>
+          <div className="mt-4 pt-4 border-t border-slate-700/50 flex flex-wrap gap-2">
+             {item.platform && item.platform.split(',').map(p => (
+               <span key={p} className="text-xs px-2 py-1 rounded bg-slate-800 text-slate-400 border border-slate-700">{p.trim()}</span>
+             ))}
           </div>
         </div>
 
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent pointer-events-none" />
-        
-        {/* Category Badge */}
-        <span className={`absolute top-3 left-3 px-2.5 py-1 rounded-md text-xs font-bold border backdrop-blur-md shadow-lg z-30 transition-opacity duration-300 group-hover/image:opacity-0 ${getCategoryColor(item.category)}`}>
-          {item.category}
-        </span>
-
-        {/* Platform Badge */}
-        {item.platform && (
-          <span className="absolute top-3 right-3 px-2 py-1 bg-black/70 backdrop-blur-md text-slate-200 text-xs font-medium rounded-md border border-white/10 shadow-lg z-30 transition-opacity duration-300 group-hover/image:opacity-0">
-            {item.platform}
+        {/* Top Badges */}
+        <div className="absolute top-3 left-3 flex flex-wrap gap-2 z-20">
+          <span className={`px-2.5 py-1 rounded-lg text-xs font-bold tracking-wide shadow-lg backdrop-blur-md border ${
+            item.category === 'Anime' ? 'bg-pink-500/20 text-pink-200 border-pink-500/30' :
+            item.category === 'Drama' ? 'bg-purple-500/20 text-purple-200 border-purple-500/30' :
+            item.category === 'Series' ? 'bg-cyan-500/20 text-cyan-200 border-cyan-500/30' :
+            item.category === 'Documentary' ? 'bg-emerald-500/20 text-emerald-200 border-emerald-500/30' :
+            'bg-amber-500/20 text-amber-200 border-amber-500/30'
+          }`}>
+            {item.category}
           </span>
-        )}
+          {item.episode && (
+            <span className="px-2.5 py-1 rounded-lg bg-slate-800/80 text-white text-xs font-bold backdrop-blur-md border border-slate-600 shadow-lg">
+              {item.episode}
+            </span>
+          )}
+        </div>
 
-        {/* Prominent Time Badge with Tooltip */}
-        <div className="absolute bottom-3 left-3 group/time z-50">
-          <div className="flex items-center gap-2 bg-indigo-600/90 backdrop-blur-md text-white px-3 py-1.5 rounded-lg shadow-lg shadow-black/40 border border-indigo-400/30 cursor-help transition-transform group-hover/time:scale-105">
-            <IconClock className="w-4 h-4" />
-            <span className="font-bold text-sm tracking-wide">{item.time || 'Time TBA'}</span>
-          </div>
-          
-          {/* Tooltip */}
-          <div className="absolute bottom-full left-0 mb-3 w-max max-w-[250px] hidden group-hover/time:block animate-in fade-in slide-in-from-bottom-2 pointer-events-none">
-            <div className="bg-slate-900/95 backdrop-blur-xl border border-slate-700 text-xs rounded-lg p-3 shadow-2xl text-slate-300 relative z-50">
-               <p className="font-bold text-white mb-1.5 border-b border-slate-700 pb-1">Broadcast Schedule</p>
-               <p className="flex items-center gap-2 mb-1">
-                 <IconCalendar className="w-3 h-3 text-indigo-400" />
-                 <span className="font-medium text-slate-200">
-                    {new Date(item.releaseDate + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                 </span>
-               </p>
-               <p className="flex items-center gap-2">
-                 <IconClock className="w-3 h-3 text-indigo-400" />
-                 <span className="font-medium text-slate-200">{item.time || 'Time TBA'}</span>
-               </p>
-               
-               <div className="mt-2 pt-2 border-t border-slate-700/50">
-                 <div className="flex justify-between items-center mb-1">
-                   <span className="text-[10px] text-slate-400">Your Timezone:</span>
-                   <span className="text-[10px] text-indigo-300 font-mono bg-indigo-900/30 px-1 rounded">{userTimezone}</span>
-                 </div>
-                 <p className="text-[10px] text-slate-500 italic leading-tight">
-                   * Schedule is displayed as reported by the source. Please check local listings.
-                 </p>
-               </div>
-               
-               {/* Arrow */}
-               <div className="w-2 h-2 bg-slate-900 absolute -bottom-1 left-5 rotate-45 border-r border-b border-slate-700"></div>
+        {/* Release Time Badge */}
+        {item.time && (
+          <div 
+            className="absolute bottom-3 left-3 z-20"
+            onMouseEnter={() => setShowTooltip(true)}
+            onMouseLeave={() => setShowTooltip(false)}
+          >
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-900/50 backdrop-blur-sm border border-indigo-500/50">
+              <IconClock className="w-3.5 h-3.5 animate-pulse" />
+              <span className="text-xs font-bold">{item.time.replace(/Available now/i, 'NOW')}</span>
+            </div>
+            {/* Tooltip */}
+            <div className={`absolute bottom-full left-0 mb-2 w-48 bg-slate-800 text-slate-200 text-xs rounded-lg p-3 shadow-xl border border-slate-700 transition-all transform origin-bottom-left z-30 pointer-events-none ${showTooltip ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+               <p className="font-semibold text-white mb-1">Release Schedule</p>
+               <p>{item.releaseDate}</p>
+               <p className="opacity-70 mt-1">Your Timezone: {localTime}</p>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
-      <div className="p-5 relative z-10 flex flex-col flex-grow">
-        <div className="flex justify-between items-start gap-4 mb-3">
-          <div>
-            <h3 className="text-lg font-bold text-white leading-tight group-hover:text-indigo-300 transition-colors">
-              {item.title}
-            </h3>
-            {item.episode && (
-              <p className="text-sm text-indigo-400 font-semibold mt-1">
-                {item.episode}
-              </p>
+      {/* Content Body */}
+      <div className="p-5 flex flex-col flex-grow relative z-10">
+        <h3 className="text-lg font-bold text-white leading-tight mb-2 line-clamp-2" title={item.title}>
+          <HighlightText text={item.title} highlight={searchQuery || ''} />
+        </h3>
+        
+        <p className="text-slate-400 text-sm line-clamp-3 mb-4 flex-grow">
+          <HighlightText text={item.description || "No description available."} highlight={searchQuery || ''} />
+        </p>
+
+        {/* Actions */}
+        <div className="flex items-center justify-between pt-4 border-t border-slate-700/50 mt-auto gap-2">
+            <div className="flex gap-2">
+                <button 
+                  onClick={handleNotifyClick}
+                  className={`p-2 rounded-xl transition-all duration-200 border ${
+                    isNotified 
+                      ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/25' 
+                      : 'bg-slate-700/50 border-slate-600 text-slate-400 hover:bg-indigo-600 hover:border-indigo-500 hover:text-white'
+                  }`}
+                  title={isNotified ? "Notifications On" : "Notify Me"}
+                >
+                  {isNotified ? <IconBellActive className="w-4 h-4" /> : <IconBell className="w-4 h-4" />}
+                </button>
+                <button 
+                  onClick={handleWatchlistClick}
+                  className={`p-2 rounded-xl transition-all duration-200 border ${
+                    isWatchlisted
+                      ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-500/25' 
+                      : 'bg-slate-700/50 border-slate-600 text-slate-400 hover:bg-emerald-600 hover:border-emerald-500 hover:text-white'
+                  }`}
+                  title={isWatchlisted ? "On Watchlist" : "Add to Watchlist"}
+                >
+                  {isWatchlisted ? <IconBookmarkCheck className="w-4 h-4" /> : <IconBookmark className="w-4 h-4" />}
+                </button>
+            </div>
+            
+            {item.link && (
+                <a 
+                    href={item.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-700/50 hover:bg-slate-600 border border-slate-600 text-slate-300 hover:text-white text-xs font-semibold transition-all"
+                >
+                    Source
+                    <IconExternal className="w-3 h-3" />
+                </a>
             )}
-          </div>
-          
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Watchlist Button */}
-            <button
-              onClick={() => onToggleWatchlist(item.id)}
-              className={`
-                p-2 rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50
-                ${isInWatchlist 
-                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-500/20' 
-                  : 'bg-slate-700/50 text-slate-400 hover:bg-slate-600 hover:text-white border border-slate-600/50'}
-              `}
-              title={isInWatchlist ? "Remove from Watchlist" : "Add to Watchlist"}
-              aria-label={isInWatchlist ? "Remove from Watchlist" : "Add to Watchlist"}
-            >
-              {isInWatchlist ? <IconBookmarkCheck className="w-5 h-5" /> : <IconBookmark className="w-5 h-5" />}
-            </button>
-
-            {/* Notification Button */}
-            <button
-              onClick={() => onToggleNotify(item.id, item.title)}
-              className={`
-                p-2 rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50
-                ${isNotified 
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-500/20' 
-                  : 'bg-slate-700/50 text-slate-400 hover:bg-slate-600 hover:text-white border border-slate-600/50'}
-              `}
-              title={isNotified ? "Remove notification" : "Notify me"}
-              aria-label={isNotified ? "Remove notification" : "Notify me"}
-            >
-              {isNotified ? <IconBellActive className="w-5 h-5" /> : <IconBell className="w-5 h-5" />}
-            </button>
-
-            {/* Go to Source Button */}
-            <a
-              href={item.link || `https://www.google.com/search?q=${encodeURIComponent(item.title + ' ' + item.category + ' official source')}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-2 rounded-full bg-slate-700/50 text-slate-400 hover:bg-slate-600 hover:text-white border border-slate-600/50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-              title="Go to Source"
-              aria-label={`Go to source for ${item.title}`}
-            >
-              <IconExternal className="w-5 h-5" />
-            </a>
-          </div>
         </div>
-
-        {item.description && (
-          <p className="text-slate-400 text-sm leading-relaxed line-clamp-3 text-ellipsis overflow-hidden mb-2">
-            {item.description}
-          </p>
-        )}
       </div>
     </div>
   );
-};
+});
 
-// --- Main App Component ---
+// --- ErrorBoundary Component ---
 
-export default function App() {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [releases, setReleases] = useState<ReleaseItem[]>([]);
-  const [loading, setLoading] = useState(false);
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  handleReload = () => {
+    window.location.reload();
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#0f172a] text-slate-100 flex items-center justify-center p-4">
+          <div className="bg-slate-800/50 border border-slate-700 rounded-3xl p-8 max-w-md text-center shadow-2xl backdrop-blur-sm animate-in zoom-in-95">
+            <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-500/20">
+              <IconAlertTriangle className="w-10 h-10 text-red-500" />
+            </div>
+            <h2 className="text-2xl font-bold mb-3 text-white">Something went wrong</h2>
+            <p className="text-slate-400 mb-8 leading-relaxed">
+              We encountered an unexpected error while rendering the application. 
+              Please try reloading to recover.
+            </p>
+            <button
+              onClick={this.handleReload}
+              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 w-full"
+            >
+              <IconRefresh className="w-5 h-5" />
+              Reload Application
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// --- Main App Content ---
+
+const AppContent = () => {
+  const [activeTab, setActiveTab] = useState<Category>('All');
+  const [data, setData] = useState<FetchResponse | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<Category>('All');
+  const [notifiedItems, setNotifiedItems] = useState<Set<string>>(new Set());
+  const [watchlistItems, setWatchlistItems] = useState<Set<string>>(new Set());
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [notifiedIds, setNotifiedIds] = useState<Set<string>>(new Set());
-  const [watchlistIds, setWatchlistIds] = useState<Set<string>>(() => {
-    const saved = localStorage.getItem('premierepulse_watchlist');
-    return saved ? new Set(JSON.parse(saved)) : new Set();
-  });
-  const [groundingLinks, setGroundingLinks] = useState<GroundingMetadata[]>([]);
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; itemId: string; title: string }>({ isOpen: false, itemId: '', title: '' });
   
-  // Use debounce for search query to improve performance
-  const debouncedSearchQuery = useDebounce(searchQuery, 300);
-
   // Settings State
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(() => {
-    const saved = localStorage.getItem('premierepulse_settings');
-    return saved ? JSON.parse(saved) : {
-      notificationsEnabled: true,
-      alertTiming: 'at-release',
-      soundEnabled: true
-    };
+    const saved = localStorage.getItem('appSettings');
+    return saved ? JSON.parse(saved) : { notificationsEnabled: true, alertTiming: 'at-release', soundEnabled: true };
   });
 
-  // Confirmation Modal State
-  const [confirmRemovalId, setConfirmRemovalId] = useState<string | null>(null);
+  const debouncedSearch = useDebounce(searchQuery, 300);
 
-  // Persist settings
+  // Persistence
   useEffect(() => {
-    localStorage.setItem('premierepulse_settings', JSON.stringify(settings));
+    localStorage.setItem('notifiedItems', JSON.stringify(Array.from(notifiedItems)));
+  }, [notifiedItems]);
+
+  useEffect(() => {
+    localStorage.setItem('watchlistItems', JSON.stringify(Array.from(watchlistItems)));
+  }, [watchlistItems]);
+
+  useEffect(() => {
+    localStorage.setItem('appSettings', JSON.stringify(settings));
   }, [settings]);
 
-  // Persist watchlist
   useEffect(() => {
-    localStorage.setItem('premierepulse_watchlist', JSON.stringify(Array.from(watchlistIds)));
-  }, [watchlistIds]);
+    const savedNotify = localStorage.getItem('notifiedItems');
+    if (savedNotify) setNotifiedItems(new Set(JSON.parse(savedNotify)));
+    
+    const savedWatchlist = localStorage.getItem('watchlistItems');
+    if (savedWatchlist) setWatchlistItems(new Set(JSON.parse(savedWatchlist)));
 
-  const fetchData = async () => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data: FetchResponse = await fetchDailyReleases(currentDate);
-      setReleases(data.items);
-      setGroundingLinks(data.groundingLinks);
-    } catch (err) {
-      setError("Failed to load schedule. Please try again later.");
+      const response = await fetchDailyReleases(new Date());
+      setData(response);
+    } catch (err: any) {
+      console.error(err);
+      if (err?.message?.includes('429') || err?.status === 429) {
+          setError("Traffic is high right now. The daily limit for the AI service has been reached. Please try again later.");
+      } else {
+          setError("Failed to load today's releases. Please check your internet connection and try again.");
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, [currentDate]);
-
-  const handleNotifyClick = async (id: string, title: string) => {
-    if (notifiedIds.has(id)) {
-      setConfirmRemovalId(id);
-    } else {
-      if (settings.notificationsEnabled) {
-        let perm = Notification.permission;
-        if (perm !== 'granted') {
-          perm = await Notification.requestPermission();
-        }
-        
-        if (perm === 'granted') {
-          sendNativeNotification(
-            "Tracking Started", 
-            `You will be notified when ${title} is released.`
-          );
-        }
-      }
-
-      setNotifiedIds(prev => {
-        const next = new Set(prev);
-        next.add(id);
-        return next;
-      });
-    }
-  };
-
-  const handleWatchlistClick = (id: string) => {
-    setWatchlistIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
+  const handleToggleNotify = (id: string, title: string) => {
+    setNotifiedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        // Should open confirm modal instead
+        return newSet; 
       } else {
-        next.add(id);
+        newSet.add(id);
+        if (settings.notificationsEnabled) {
+             sendNativeNotification("Reminder Set", `You will be notified for ${title}`);
+        }
+        return newSet;
       }
-      return next;
     });
   };
 
-  const executeRemoval = () => {
-    if (confirmRemovalId) {
-      setNotifiedIds(prev => {
-        const next = new Set(prev);
-        next.delete(confirmRemovalId);
-        return next;
-      });
-      setConfirmRemovalId(null);
-    }
+  const initRemoveNotify = (id: string, title: string) => {
+    setConfirmModal({ isOpen: true, itemId: id, title });
   };
 
+  const confirmRemoveNotify = () => {
+    setNotifiedItems(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(confirmModal.itemId);
+        return newSet;
+    });
+    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+  };
+
+  const handleToggleWatchlist = (id: string) => {
+    setWatchlistItems(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        return newSet;
+    });
+  };
+
+  const handleCategoryChange = (category: Category) => {
+    setActiveTab(category);
+    setSearchQuery('');
+  };
+
+  // --- Search & Filtering Logic ---
   const filteredReleases = useMemo(() => {
-    let result = releases;
+    if (!data) return [];
+    
+    let items = activeTab === 'All' 
+      ? data.items 
+      : data.items.filter(item => item.category === activeTab);
 
-    // Filter by category first (optimization)
-    if (filter !== 'All') {
-      result = result.filter(item => item.category === filter);
-    }
+    if (debouncedSearch.trim()) {
+      const queryTokens = tokenize(debouncedSearch);
+      
+      const scoredItems = items.map(item => {
+        let score = 0;
+        const normTitle = normalizeStr(item.title);
+        const normDesc = normalizeStr(item.description || "");
+        const normPlatform = normalizeStr(item.platform || "");
+        const normCategory = normalizeStr(item.category || "");
 
-    // Robust weighted search logic with fuzzy matching
-    if (debouncedSearchQuery.trim()) {
-      const query = normalizeStr(debouncedSearchQuery);
-      const terms = query.split(" ").filter(t => t.length > 0);
+        // --- 1. Phrase Matching (Highest Priority) ---
+        const normalizedQuery = normalizeStr(debouncedSearch);
+        if (normTitle === normalizedQuery) score += 100;
+        else if (normTitle.startsWith(normalizedQuery)) score += 80;
+        else if (normTitle.includes(normalizedQuery)) score += 60;
 
-      result = result
-        .map(item => {
-          let score = 0;
-          const titleNorm = normalizeStr(item.title);
-          const descNorm = item.description ? normalizeStr(item.description) : '';
-          const platformNorm = item.platform ? normalizeStr(item.platform) : '';
-          const categoryNorm = normalizeStr(item.category);
-          
-          const titleWords = titleNorm.split(" ");
+        // --- 2. Token Matching (Smart Search) ---
+        // Allows "Bleach War" to match "Bleach: Thousand-Year Blood War"
+        // Check how many query tokens exist in the title tokens
+        const titleTokens = tokenize(item.title);
+        let tokenMatches = 0;
+        let tokenScore = 0;
 
-          // 1. Exact Title Match (Highest Priority)
-          if (titleNorm === query) score += 100;
-          
-          // 2. Starts With (High Priority)
-          if (titleNorm.startsWith(query)) score += 50;
+        for (const qToken of queryTokens) {
+            let bestTokenMatch = 0;
+            for (const tToken of titleTokens) {
+                if (tToken === qToken) {
+                    bestTokenMatch = 10; // Exact word match
+                } else if (tToken.startsWith(qToken)) {
+                    bestTokenMatch = Math.max(bestTokenMatch, 5); // Word starts with
+                } else if (tToken.includes(qToken)) {
+                    bestTokenMatch = Math.max(bestTokenMatch, 2); // Word contains
+                } else {
+                    const dist = getLevenshteinDistance(tToken, qToken);
+                    if (dist <= 2) {
+                        bestTokenMatch = Math.max(bestTokenMatch, 4); // Fuzzy word match
+                    }
+                }
+            }
+            if (bestTokenMatch > 0) {
+                tokenMatches++;
+                tokenScore += bestTokenMatch;
+            }
+        }
 
-          // 3. Contains full query phrase (Medium Priority)
-          if (titleNorm.includes(query)) score += 30;
+        // Bonus if ALL query tokens are found in the title (even out of order)
+        if (tokenMatches === queryTokens.length && queryTokens.length > 0) {
+            score += 40;
+        }
+        score += tokenScore;
 
-          // 4. Matches Platform or Category
-          if (platformNorm.includes(query) || categoryNorm.includes(query)) score += 15;
-          // Explicitly boost if searching for a category name (e.g., "Anime")
-          if (categoryNorm === query) score += 30;
+        // --- 3. Acronym Match ---
+        // e.g. "MHA" -> "My Hero Academia"
+        const acronym = titleTokens.map(t => t[0]).join('');
+        if (acronym === normalizedQuery && acronym.length > 1) {
+            score += 30;
+        }
 
-          // 5. Term Matching & Fuzzy Search
-          let termMatches = 0;
-          
-          terms.forEach(term => {
-             let termMatched = false;
+        // --- 4. Metadata Match ---
+        if (normPlatform.includes(normalizedQuery) || normCategory === normalizedQuery) {
+            score += 20;
+        }
+        
+        // --- 5. Description Match ---
+        if (normDesc.includes(normalizedQuery)) {
+            score += 5;
+        }
 
-             // Exact substring match in title
-             if (titleNorm.includes(term)) {
-               score += 10;
-               termMatched = true;
-             } 
-             // Exact substring match in platform/category
-             else if (platformNorm.includes(term) || categoryNorm.includes(term)) {
-               score += 5;
-               termMatched = true;
-             }
-             // Exact substring match in description
-             else if (descNorm.includes(term)) {
-               score += 2; // Lowered slightly to reduce noise
-               termMatched = true;
-             }
-             // Fuzzy match against title words (for typos)
-             else {
-               // Check if any word in the title is close to the term using Levenshtein distance
-               const bestFuzzyMatch = titleWords.reduce((minDist, word) => {
-                 const dist = getLevenshteinDistance(term, word);
-                 return dist < minDist ? dist : minDist;
-               }, 100);
+        return { item, score };
+      });
 
-               // Allow 1 error for words length < 5, 2 errors for 5+
-               const allowedErrors = term.length > 4 ? 2 : 1;
-               
-               if (bestFuzzyMatch <= allowedErrors) {
-                 score += 5; // Fuzzy match bonus
-                 termMatched = true;
-               }
-             }
-
-             if (termMatched) termMatches++;
-          });
-
-          // Boost score if all terms matched
-          if (termMatches === terms.length) score += 20;
-
-          // Penalize significantly if very few terms matched relative to query length
-          if (termMatches === 0 && terms.length > 0) score = -1;
-
-          return { item, score };
-        })
-        .filter(r => r.score > 0) // Only keep items with positive score
+      // Filter out items with low score and sort by score desc
+      items = scoredItems
+        .filter(si => si.score > 0)
         .sort((a, b) => b.score - a.score)
-        .map(r => r.item);
+        .map(si => si.item);
     }
+    
+    return items;
+  }, [data, activeTab, debouncedSearch]);
 
-    return result;
-  }, [releases, filter, debouncedSearchQuery]);
-
-  const handleDateChange = (days: number) => {
-    const newDate = new Date(currentDate);
-    newDate.setDate(currentDate.getDate() + days);
-    setCurrentDate(newDate);
-  };
-
-  const formattedDate = currentDate.toLocaleDateString('en-US', { 
-    weekday: 'long', 
-    month: 'long', 
-    day: 'numeric' 
-  });
+  const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
   return (
-    <div className="min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-slate-950 text-slate-200">
-      
-      {/* Settings Modal */}
-      <SettingsModal 
-        isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)}
-        settings={settings}
-        onUpdate={setSettings}
-      />
+    <div className="min-h-screen bg-[#0f172a] text-slate-100 selection:bg-indigo-500/30">
+      {/* Background Gradients */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-900/20 rounded-full blur-3xl mix-blend-screen animate-pulse" style={{ animationDuration: '4s' }} />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-900/10 rounded-full blur-3xl mix-blend-screen" />
+      </div>
 
-      {/* Confirmation Modal */}
-      <ConfirmationModal 
-        isOpen={!!confirmRemovalId}
-        onClose={() => setConfirmRemovalId(null)}
-        onConfirm={executeRemoval}
-        title="Disable Notification?"
-        message="Are you sure you want to stop receiving notifications for this release?"
-      />
-
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-lg border-b border-slate-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row justify-between items-center py-4 gap-4">
-            
-            {/* Logo */}
-            <div className="flex items-center gap-3">
-              <div className="bg-indigo-600 p-2 rounded-lg shadow-lg shadow-indigo-500/20">
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* Header */}
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-500/30">
                 <IconCalendar className="w-6 h-6 text-white" />
               </div>
-              <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
+              <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white via-indigo-200 to-indigo-400 tracking-tight">
                 PremierePulse
               </h1>
             </div>
-
-            {/* Controls Right */}
-            <div className="flex items-center gap-4">
-              {/* Date Navigation */}
-              <div className="flex items-center gap-4 bg-slate-900/50 p-1.5 rounded-full border border-slate-800">
-                <button onClick={() => handleDateChange(-1)} className="p-2 hover:bg-slate-800 rounded-full transition-colors">
-                  ←
-                </button>
-                <span className="font-medium px-2 min-w-[200px] text-center hidden sm:block">{formattedDate}</span>
-                <span className="font-medium px-2 text-center sm:hidden">{currentDate.toLocaleDateString()}</span>
-                <button onClick={() => handleDateChange(1)} className="p-2 hover:bg-slate-800 rounded-full transition-colors">
-                  →
-                </button>
-              </div>
-
-              {/* Refresh Button */}
-              <button 
-                onClick={fetchData}
-                disabled={loading}
-                className="p-3 rounded-full bg-slate-900/50 border border-slate-800 hover:bg-slate-800 hover:text-white text-slate-400 transition-all hover:shadow-lg hover:shadow-indigo-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Refresh Schedule"
-              >
-                <IconRefresh className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-              </button>
-
-              {/* Settings Button */}
-              <button 
-                onClick={() => setIsSettingsOpen(true)}
-                className="p-3 rounded-full bg-slate-900/50 border border-slate-800 hover:bg-slate-800 hover:text-white text-slate-400 transition-all hover:shadow-lg hover:shadow-indigo-500/10"
-                aria-label="Settings"
-              >
-                <IconSettings className="w-5 h-5" />
-              </button>
-            </div>
+            <p className="text-slate-400 font-medium flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              {todayStr}
+            </p>
           </div>
-        </div>
-      </header>
+          
+          <div className="flex items-center gap-3">
+             {/* Search Bar */}
+             <div className="relative group w-full md:w-64">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <IconSearch className="h-4 w-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search titles (e.g. 'Bleach')..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="block w-full pl-10 pr-3 py-2.5 border border-slate-700 rounded-xl leading-5 bg-slate-800/50 text-slate-300 placeholder-slate-500 focus:outline-none focus:bg-slate-800 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 sm:text-sm transition-all shadow-sm"
+                />
+                {searchQuery && (
+                  <button 
+                    onClick={() => setSearchQuery('')}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-white"
+                  >
+                    <IconX className="h-4 w-4" />
+                  </button>
+                )}
+             </div>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        {/* Search Bar */}
-        <div className="relative max-w-2xl mx-auto mb-8 group">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <IconSearch className="h-5 w-5 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+             <button 
+               onClick={loadData}
+               disabled={loading}
+               className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700 hover:border-slate-600 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+               title="Refresh Data"
+             >
+               <IconRefresh className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+             </button>
+
+             <button 
+               onClick={() => setSettingsOpen(true)}
+               className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700 hover:border-slate-600 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+               title="Settings"
+             >
+               <IconSettings className="w-5 h-5" />
+             </button>
           </div>
-          <input
-            type="text"
-            className="block w-full pl-10 pr-10 py-3 border border-slate-700 rounded-xl leading-5 bg-slate-900/50 text-slate-200 placeholder-slate-500 focus:outline-none focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 sm:text-sm transition-all shadow-lg"
-            placeholder="Search for movies, anime, or dramas..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-white transition-colors"
-            >
-              <IconX className="h-4 w-4" />
-            </button>
-          )}
-        </div>
+        </header>
 
-        {/* Filters */}
-        <div className="flex flex-wrap gap-3 mb-8 justify-center md:justify-start">
-          <FilterTab active={filter === 'All'} label="All Releases" onClick={() => setFilter('All')} />
-          <FilterTab active={filter === 'Anime'} label="Anime" icon={IconAnime} onClick={() => setFilter('Anime')} />
-          <FilterTab active={filter === 'Drama'} label="Dramas" icon={IconDrama} onClick={() => setFilter('Drama')} />
-          <FilterTab active={filter === 'Movie'} label="Movies" icon={IconMovie} onClick={() => setFilter('Movie')} />
+        {/* Filter Tabs */}
+        <div className="flex flex-wrap items-center gap-3 mb-8">
+          <FilterTab active={activeTab === 'All'} label="All Releases" onClick={() => handleCategoryChange('All')} />
+          <FilterTab active={activeTab === 'Anime'} label="Anime" icon={IconAnime} onClick={() => handleCategoryChange('Anime')} />
+          <FilterTab active={activeTab === 'Drama'} label="Dramas" icon={IconDrama} onClick={() => handleCategoryChange('Drama')} />
+          <FilterTab active={activeTab === 'Movie'} label="Movies" icon={IconMovie} onClick={() => handleCategoryChange('Movie')} />
+          <FilterTab active={activeTab === 'Series'} label="TV Series" icon={IconSeries} onClick={() => handleCategoryChange('Series')} />
+          <FilterTab active={activeTab === 'Documentary'} label="Docs" icon={IconDocumentary} onClick={() => handleCategoryChange('Documentary')} />
+          
+          <div className="ml-auto text-xs text-slate-500 font-medium px-3 py-1 rounded-full bg-slate-900/50 border border-slate-800 hidden sm:block">
+            {filteredReleases.length} Items Found
+          </div>
         </div>
 
         {/* Content Area */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-500">
-            <IconLoader className="w-10 h-10 animate-spin mb-4 text-indigo-500" />
-            <p className="animate-pulse">Scanning Netflix, Prime, Crunchyroll, JustWatch, Trakt, YTS, 1337x, & Nyaa...</p>
+          <div className="flex flex-col items-center justify-center py-32 animate-in fade-in duration-500">
+            <div className="relative">
+              <div className="w-16 h-16 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-8 h-8 bg-indigo-500/10 rounded-full blur-md animate-pulse" />
+              </div>
+            </div>
+            <p className="mt-8 text-slate-400 text-lg font-medium animate-pulse">Syncing with global APIs...</p>
+            <p className="text-slate-600 text-sm mt-2">Connecting to TMDB, AniList, Viki, Netflix & Prime</p>
           </div>
         ) : error ? (
-          <div className="max-w-lg mx-auto text-center py-16 px-6 rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-sm shadow-xl animate-in fade-in slide-in-from-bottom-4">
-            <div className="bg-red-500/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ring-1 ring-red-500/20 shadow-lg shadow-red-500/10">
-               <IconWifiOff className="w-10 h-10 text-red-400" />
-            </div>
-            <h3 className="text-xl font-bold text-white mb-3">Unable to Load Schedule</h3>
-            <p className="text-slate-400 text-sm mb-8 leading-relaxed">
-              We couldn't connect to the server to fetch the latest releases. This might be due to a temporary network interruption or API limits.
-            </p>
-            <button 
-              onClick={fetchData}
-              className="group flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 w-full sm:w-auto mx-auto"
-            >
-              <IconRefresh className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
-              Retry Connection
-            </button>
-          </div>
-        ) : filteredReleases.length === 0 ? (
-          <div className="text-center py-20 text-slate-500 bg-slate-900/50 rounded-xl border border-slate-800 border-dashed">
-            <p className="text-lg">
-              {searchQuery 
-                ? `No releases found for "${searchQuery}"`
-                : "No releases found for this category today."}
-            </p>
-            {searchQuery && (
+           <div className="flex flex-col items-center justify-center py-20 bg-slate-800/30 border border-red-500/20 rounded-3xl p-8 text-center animate-in zoom-in-95 duration-300">
+              <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
+                <IconWifiOff className="w-10 h-10 text-red-400" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Connection Issue</h3>
+              <p className="text-slate-400 max-w-md mx-auto mb-8 leading-relaxed">{error}</p>
               <button 
-                onClick={() => setSearchQuery('')}
-                className="mt-3 text-indigo-400 hover:text-indigo-300 text-sm font-medium"
+                onClick={loadData}
+                className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-red-500/20 flex items-center gap-2"
               >
-                Clear search
+                <IconRefresh className="w-4 h-4" />
+                Retry Connection
               </button>
-            )}
+           </div>
+        ) : filteredReleases.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center animate-in fade-in duration-500">
+             <div className="w-24 h-24 bg-slate-800 rounded-full flex items-center justify-center mb-6">
+                <IconSearch className="w-10 h-10 text-slate-600" />
+             </div>
+             <h3 className="text-xl font-bold text-slate-200 mb-2">No Releases Found</h3>
+             <p className="text-slate-400 max-w-sm mx-auto">
+               {searchQuery ? `No matches for "${searchQuery}". Try a broader term or check spelling.` : "Looks like a quiet day! No releases matched your current filters."}
+             </p>
+             {searchQuery && (
+               <button onClick={() => setSearchQuery('')} className="mt-6 text-indigo-400 hover:text-indigo-300 font-medium">
+                 Clear Search
+               </button>
+             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredReleases.map(item => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
+            {filteredReleases.map((item) => (
               <ReleaseCard 
                 key={item.id} 
                 item={item} 
-                isNotified={notifiedIds.has(item.id)}
-                isInWatchlist={watchlistIds.has(item.id)}
-                onToggleNotify={handleNotifyClick}
-                onToggleWatchlist={handleWatchlistClick}
+                isNotified={notifiedItems.has(item.id)}
+                onToggleNotify={() => handleToggleNotify(item.id, item.title)}
+                onRemoveNotify={() => initRemoveNotify(item.id, item.title)}
+                isWatchlisted={watchlistItems.has(item.id)}
+                onToggleWatchlist={() => handleToggleWatchlist(item.id)}
+                searchQuery={debouncedSearch}
               />
             ))}
           </div>
         )}
 
-      </main>
-
-      {/* Footer / Attribution */}
-      <footer className="border-t border-slate-800 mt-12 bg-slate-950 py-8">
-        <div className="max-w-7xl mx-auto px-4 text-center">
-          
-          {groundingLinks.length > 0 && (
-            <div className="mb-6">
-              <h4 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">Source Links</h4>
-              <div className="flex flex-wrap justify-center gap-3">
-                {groundingLinks.map((link, idx) => (
-                  <a 
-                    key={idx}
-                    href={link.web.uri}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 px-3 py-1.5 rounded-full border border-indigo-500/20 transition-colors"
-                  >
-                    <IconExternal className="w-3 h-3" />
-                    {link.web.title}
-                  </a>
-                ))}
+        {/* Footer Attribution */}
+        <footer className="border-t border-slate-800 mt-12 py-8 text-center">
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-slate-500 text-sm">
+                Data sourced strictly from <span className="text-indigo-400 font-medium">TMDB</span>, <span className="text-indigo-400 font-medium">AniList</span>, <span className="text-indigo-400 font-medium">MyAnimeList</span>, & <span className="text-indigo-400 font-medium">Viki</span>.
+              </p>
+              <div className="flex gap-4 text-xs text-slate-600">
+                <span>• Netflix</span>
+                <span>• Amazon Prime</span>
+                <span>• Disney+</span>
               </div>
             </div>
-          )}
+        </footer>
 
-          <div className="flex flex-col items-center justify-center gap-2 text-slate-500 text-sm">
-            <p>Data provided via Google Gemini analysis of:</p>
-            <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 max-w-2xl">
-              <a href="https://myanimelist.net" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">MyAnimeList</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://senpai.moe" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Senpai.moe</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://animeschedule.net" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">AnimeSchedule</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://justwatch.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">JustWatch</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://livechart.me" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">LiveChart</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://anilist.co" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">AniList</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://kitsu.io" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Kitsu</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://animenewsnetwork.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">ANN</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://mydramalist.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">MyDramaList</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://tvmaze.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">TVMaze</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://rottentomatoes.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Rotten Tomatoes</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://viki.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Viki</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://netflix.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Netflix</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://amazon.com/primevideo" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Prime Video</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://crunchyroll.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Crunchyroll</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://hidive.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">HIDIVE</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://trakt.tv" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Trakt</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://themoviedb.org" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">TMDB</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://en.yts-official.org" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">YTS</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://1337x.to" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">1337x</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://nyaa.si" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Nyaa</a>
-              <span className="text-slate-700">•</span>
-              <a href="https://imdb.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">IMDb</a>
-            </div>
-          </div>
-          <p className="text-slate-600 text-xs mt-4">
-            © {new Date().getFullYear()} PremierePulse. All rights reserved.
-          </p>
-        </div>
-      </footer>
+      </div>
+
+      <SettingsModal 
+        isOpen={settingsOpen} 
+        onClose={() => setSettingsOpen(false)} 
+        settings={settings}
+        onUpdate={setSettings}
+      />
+
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmRemoveNotify}
+        title={confirmModal.title}
+      />
     </div>
   );
-}
+};
+
+const App = () => (
+  <ErrorBoundary>
+    <AppContent />
+  </ErrorBoundary>
+);
+
+export default App;

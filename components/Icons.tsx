@@ -17,12 +17,16 @@ import {
   Bookmark,
   BookmarkCheck,
   WifiOff,
-  RefreshCw
+  RefreshCw,
+  MonitorPlay,
+  Video
 } from 'lucide-react';
 
 export const IconAnime = ({ className }: { className?: string }) => <Tv className={className} />;
 export const IconDrama = ({ className }: { className?: string }) => <Clapperboard className={className} />;
 export const IconMovie = ({ className }: { className?: string }) => <Film className={className} />;
+export const IconSeries = ({ className }: { className?: string }) => <MonitorPlay className={className} />;
+export const IconDocumentary = ({ className }: { className?: string }) => <Video className={className} />;
 export const IconCalendar = ({ className }: { className?: string }) => <Calendar className={className} />;
 export const IconBell = ({ className }: { className?: string }) => <Bell className={className} />;
 export const IconBellActive = ({ className }: { className?: string }) => <CheckCircle className={className} />;
