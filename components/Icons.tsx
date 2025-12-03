@@ -19,7 +19,13 @@ import {
   WifiOff,
   RefreshCw,
   MonitorPlay,
-  Video
+  Video,
+  LayoutGrid,
+  List,
+  ChevronLeft,
+  ChevronRight,
+  Play,
+  Star
 } from 'lucide-react';
 
 export const IconAnime = ({ className }: { className?: string }) => <Tv className={className} />;
@@ -43,3 +49,9 @@ export const IconBookmarkCheck = ({ className }: { className?: string }) => <Boo
 export const IconWifiOff = ({ className }: { className?: string }) => <WifiOff className={className} />;
 export const IconRefresh = ({ className }: { className?: string }) => <RefreshCw className={className} />;
 export const IconTv = ({ className }: { className?: string }) => <Tv className={className} />;
+export const IconLayoutGrid = ({ className }: { className?: string }) => <LayoutGrid className={className} />;
+export const IconList = ({ className }: { className?: string }) => <List className={className} />;
+export const IconChevronLeft = ({ className }: { className?: string }) => <ChevronLeft className={className} />;
+export const IconChevronRight = ({ className }: { className?: string }) => <ChevronRight className={className} />;
+export const IconPlay = ({ className }: { className?: string }) => <Play className={className} />;
+export const IconStar = ({ className }: { className?: string }) => <Star className={className} />;

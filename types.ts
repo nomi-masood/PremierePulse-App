@@ -7,11 +7,16 @@ export interface ReleaseItem {
   category: Category;
   episode?: string;
   time?: string;
+  timestamp?: number; // Unix timestamp in milliseconds for countdown
   platform?: string;
   description?: string;
   releaseDate: string; // ISO string YYYY-MM-DD
   imageUrl?: string;
   link?: string;
+  deepLink?: string; // Direct link to streaming service
+  rating?: number; // 0-10 scale
+  subGenres?: string[];
+  trailerKey?: string; // YouTube video ID
 }
 
 export interface GroundingMetadata {

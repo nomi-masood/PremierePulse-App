@@ -6,6 +6,10 @@ const TMDB_API_KEY = '5a6d92f26bf1d9292a7a8a261621aef3';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
+// Trakt API Configuration
+const TRAKT_CLIENT_ID = 'YOUR_TRAKT_CLIENT_ID_HERE'; 
+const TRAKT_API_URL = 'https://api.trakt.tv';
+
 const ANILIST_API_URL = 'https://graphql.anilist.co';
 
 // --- Helper: Error Handling ---
@@ -31,7 +35,6 @@ async function handleApiResponse(response: Response, source: string) {
 // --- AniList Fetcher ---
 
 async function fetchAniListAnime(date: Date): Promise<ReleaseItem[]> {
-    // Determine start and end of the day in Unix timestamp (User Local Time)
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     
@@ -57,6 +60,16 @@ async function fetchAniListAnime(date: Date): Promise<ReleaseItem[]> {
               native
             }
             description
+            averageScore
+            genres
+            trailer {
+              id
+              site
+            }
+            externalLinks {
+              site
+              url
+            }
             coverImage {
               large
               extraLarge
@@ -88,9 +101,7 @@ async function fetchAniListAnime(date: Date): Promise<ReleaseItem[]> {
 
         const json = await handleApiResponse(response, 'AniList');
         
-        // Validate GraphQL structure
         if (!json.data?.Page?.airingSchedules || !Array.isArray(json.data.Page.airingSchedules)) {
-            console.warn("AniList response malformed or empty");
             return [];
         }
 
@@ -98,34 +109,64 @@ async function fetchAniListAnime(date: Date): Promise<ReleaseItem[]> {
 
         for (const item of json.data.Page.airingSchedules) {
             const media = item.media;
-            
-            // Validation: Skip items with missing critical data
             if (!media || !media.id) continue;
 
             const title = media.title?.english || media.title?.romaji || media.title?.native || "Unknown Title";
             const timeDate = new Date(item.airingAt * 1000);
             const timeString = timeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            // Find a streaming link (prioritize Crunchyroll/Netflix/Official)
+            const officialLink = media.externalLinks?.find((l: any) => 
+                ['Crunchyroll', 'Netflix', 'Amazon', 'Disney Plus', 'Hulu'].includes(l.site)
+            )?.url || media.siteUrl;
 
             validItems.push({
                 id: `anilist-${media.id}-${item.episode}`,
                 title: title,
                 category: 'Anime',
-                description: media.description ? media.description.replace(/<[^>]*>?/gm, '') : 'No description available.', // Strip HTML
+                description: media.description ? media.description.replace(/<[^>]*>?/gm, '') : 'No description available.', 
                 releaseDate: timeDate.toLocaleDateString('en-CA'),
                 imageUrl: media.coverImage?.extraLarge || media.coverImage?.large,
                 time: timeString,
+                timestamp: item.airingAt * 1000,
                 episode: `Ep ${item.episode}`,
                 platform: 'AniList',
-                link: media.siteUrl || `https://myanimelist.net/anime/${media.idMal}`
+                link: media.siteUrl,
+                deepLink: officialLink,
+                rating: media.averageScore ? media.averageScore / 10 : undefined, // Convert 100 scale to 10
+                subGenres: media.genres?.slice(0, 3),
+                trailerKey: media.trailer?.site === 'youtube' ? media.trailer.id : undefined
             });
         }
-
         return validItems;
-
     } catch (error) {
         console.error("AniList Fetch Error:", error);
-        // Return empty array on failure so TMDB data can still load
         return []; 
+    }
+}
+
+// --- Trakt Fetcher ---
+
+async function fetchTraktDaily(isoDate: string): Promise<any[]> {
+    if (TRAKT_CLIENT_ID === 'YOUR_TRAKT_CLIENT_ID_HERE') {
+        return [];
+    }
+
+    try {
+        const url = `${TRAKT_API_URL}/calendars/all/shows/${isoDate}/1`;
+        const response = await fetch(url, {
+            headers: {
+                'Content-Type': 'application/json',
+                'trakt-api-version': '2',
+                'trakt-api-key': TRAKT_CLIENT_ID
+            }
+        });
+
+        const data = await handleApiResponse(response, 'Trakt');
+        return data || [];
+    } catch (error) {
+        console.warn("Trakt Fetch Error:", error);
+        return [];
     }
 }
 
@@ -155,11 +196,11 @@ async function fetchTmdbTv(isoDate: string): Promise<any[]> {
     }
 }
 
-async function fetchTmdbDetails(id: number): Promise<any> {
+async function fetchTmdbDetails(id: number, type: 'tv' | 'movie' = 'tv'): Promise<any> {
     try {
-        const url = `${TMDB_BASE_URL}/tv/${id}?api_key=${TMDB_API_KEY}`;
+        // Enriched fetch: videos for trailers, watch providers for deep links
+        const url = `${TMDB_BASE_URL}/${type}/${id}?api_key=${TMDB_API_KEY}&append_to_response=videos,watch/providers`;
         const res = await fetch(url);
-        // Fail silently for enrichment
         if (!res.ok) return null;
         return await res.json();
     } catch (e) {
@@ -170,30 +211,94 @@ async function fetchTmdbDetails(id: number): Promise<any> {
 // --- Main Fetcher ---
 
 export const fetchDailyReleases = async (date: Date): Promise<FetchResponse> => {
-  // Format date as YYYY-MM-DD for TMDB API queries
   const isoDate = date.toLocaleDateString('en-CA'); 
 
-  // Parallel Execution with isolated error handling
-  const [moviesResults, tvResults, animeItems] = await Promise.all([
+  // Parallel Execution
+  const [moviesResults, tvResults, animeItems, traktResults] = await Promise.all([
       fetchTmdbMovies(isoDate),
       fetchTmdbTv(isoDate),
-      fetchAniListAnime(date)
+      fetchAniListAnime(date),
+      fetchTraktDaily(isoDate)
   ]);
 
-  let items: ReleaseItem[] = [...animeItems]; 
+  let items: ReleaseItem[] = [...animeItems];
+  const processedIds = new Set<string>(); // To deduplicate Trakt vs TMDB
+
+  // --- Process Trakt Results ---
+  const traktPromises = traktResults.map(async (item: any) => {
+      const show = item.show;
+      const episode = item.episode;
+      const tmdbId = show.ids.tmdb;
+
+      if (!tmdbId) return null;
+
+      // Hydrate with TMDB Data for Image/Network/Trailers
+      const tmdbData = await fetchTmdbDetails(tmdbId, 'tv');
+      if (!tmdbData) return null;
+
+      const origin = tmdbData.origin_country || [];
+      if (origin.includes('IN')) return null;
+
+      const genres = tmdbData.genres?.map((g: any) => g.id) || [];
+      const genreNames = tmdbData.genres?.map((g: any) => g.name) || [];
+      const isAnime = genres.includes(16) && origin.includes('JP');
+      
+      if (isAnime) return null;
+
+      let category: Category = 'Series';
+      if (genres.includes(99)) category = 'Documentary';
+      else if (genres.includes(18) && origin.some((c: string) => ['KR', 'CN', 'TW', 'TH', 'JP'].includes(c))) category = 'Drama';
+
+      const networks = tmdbData.networks?.slice(0, 2).map((n: any) => n.name).join(', ') || 'Trakt';
+
+      processedIds.add(`tv-${tmdbId}`);
+
+      const timeDate = new Date(item.first_aired);
+      const timeString = timeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      
+      // Extract trailer
+      const trailer = tmdbData.videos?.results?.find((v: any) => v.site === 'YouTube' && v.type === 'Trailer') 
+        || tmdbData.videos?.results?.find((v: any) => v.site === 'YouTube');
+
+      // Extract deep link (US as default region)
+      const providerLink = tmdbData['watch/providers']?.results?.US?.link;
+
+      return {
+          id: `tv-${tmdbId}`,
+          title: show.title,
+          category,
+          description: tmdbData.overview || show.overview || 'No description available.',
+          releaseDate: isoDate,
+          imageUrl: tmdbData.poster_path ? `${IMAGE_BASE}${tmdbData.poster_path}` : undefined,
+          time: timeString,
+          timestamp: timeDate.getTime(),
+          episode: `S${episode.season}E${episode.number}`,
+          platform: networks,
+          link: `https://trakt.tv/shows/${show.ids.slug}`,
+          deepLink: providerLink,
+          rating: tmdbData.vote_average,
+          subGenres: genreNames.slice(0, 3),
+          trailerKey: trailer?.key
+      } as ReleaseItem;
+  });
+
+  const validTraktItems = (await Promise.all(traktPromises)).filter(Boolean) as ReleaseItem[];
+  items = [...items, ...validTraktItems];
 
   // --- Process TMDB Movies ---
-  moviesResults.forEach((m: any) => {
-    // Validation
-    if (!m.id || !m.title) return;
+  const moviePromises = moviesResults.map(async (m: any) => {
+    if (!m.id || !m.title) return null;
+    if (['hi', 'te', 'ta', 'kn', 'ml'].includes(m.original_language)) return null;
+    if (m.genre_ids?.includes(16) && m.original_language === 'ja') return null;
 
-    // Filter out Indian content
-    if (['hi', 'te', 'ta', 'kn', 'ml'].includes(m.original_language)) return;
-    
-    // Exclude strictly "Animation" + "Japan" movies from TMDB to avoid AniList dupes
-    if (m.genre_ids?.includes(16) && m.original_language === 'ja') return;
+    // Fetch details for trailer/watch link
+    const details = await fetchTmdbDetails(m.id, 'movie');
+    const trailer = details?.videos?.results?.find((v: any) => v.site === 'YouTube' && v.type === 'Trailer')
+        || details?.videos?.results?.find((v: any) => v.site === 'YouTube');
+    const providerLink = details?.['watch/providers']?.results?.US?.link;
+    const genreNames = details?.genres?.map((g: any) => g.name) || [];
 
-    items.push({
+    return {
       id: `movie-${m.id}`,
       title: m.title,
       category: 'Movie',
@@ -202,42 +307,47 @@ export const fetchDailyReleases = async (date: Date): Promise<FetchResponse> => 
       imageUrl: m.poster_path ? `${IMAGE_BASE}${m.poster_path}` : undefined,
       time: 'Available Now',
       platform: 'Theaters / Digital', 
-      link: `https://www.themoviedb.org/movie/${m.id}`
-    });
+      link: `https://www.themoviedb.org/movie/${m.id}`,
+      deepLink: providerLink,
+      rating: m.vote_average,
+      subGenres: genreNames.slice(0, 3),
+      trailerKey: trailer?.key
+    } as ReleaseItem;
   });
+  
+  const validMovies = (await Promise.all(moviePromises)).filter(Boolean) as ReleaseItem[];
+  items = [...items, ...validMovies];
 
-  // --- Process TMDB TV (Dramas, Series, Docs) ---
-  tvResults.forEach((t: any) => {
-    // Validation
-    if (!t.id || !t.name) return;
+  // --- Process TMDB TV (Supplement) ---
+  const tvPromises = tvResults.map(async (t: any) => {
+    if (!t.id || !t.name) return null;
+    if (processedIds.has(`tv-${t.id}`)) return null;
 
     const origin = t.origin_country || [];
-    // Filter out Indian content
-    if (origin.includes('IN')) return;
+    if (origin.includes('IN')) return null;
 
     const genres = t.genre_ids || [];
-    
-    // Detect Anime (Animation + JP)
     const isAnime = genres.includes(16) && origin.includes('JP');
-    
-    // Skip Anime from TMDB results (We rely on AniList)
-    if (isAnime) return;
+    if (isAnime) return null;
 
-    // Default category to Series (for US, UK, Western TV, etc.)
     let category: Category = 'Series';
-
-    // Categorization Logic
     if (genres.includes(99)) {
       category = 'Documentary';
     } else if (
         genres.includes(18) && 
         (origin.some((c: string) => ['KR', 'CN', 'TW', 'TH', 'JP'].includes(c)))
     ) {
-      // If it is a Drama (ID 18) from Korea, China, Taiwan, Thailand, or Japan(Live Action), categorize as Drama
       category = 'Drama';
     }
 
-    items.push({
+    // Enrich
+    const details = await fetchTmdbDetails(t.id, 'tv');
+    const networks = details?.networks?.slice(0, 2).map((n: any) => n.name).join(', ') || 'TMDB';
+    const trailer = details?.videos?.results?.find((v: any) => v.site === 'YouTube' && v.type === 'Trailer');
+    const providerLink = details?.['watch/providers']?.results?.US?.link;
+    const genreNames = details?.genres?.map((g: any) => g.name) || [];
+
+    return {
       id: `tv-${t.id}`,
       title: t.name,
       category,
@@ -246,30 +356,17 @@ export const fetchDailyReleases = async (date: Date): Promise<FetchResponse> => 
       imageUrl: t.poster_path ? `${IMAGE_BASE}${t.poster_path}` : undefined,
       time: 'New Episode',
       episode: 'New',
-      platform: 'TMDB', 
-      link: `https://www.themoviedb.org/tv/${t.id}`
-    });
+      platform: networks,
+      link: `https://www.themoviedb.org/tv/${t.id}`,
+      deepLink: providerLink,
+      rating: t.vote_average,
+      subGenres: genreNames.slice(0, 3),
+      trailerKey: trailer?.key
+    } as ReleaseItem;
   });
 
-  // --- 3. Enrich TV Items with Network Data ---
-  // We process this in chunks to avoid hitting rate limits if there are many items
-  const enrichItem = async (item: ReleaseItem): Promise<ReleaseItem> => {
-      // Only enrich TMDB TV items
-      if (!item.id.startsWith('tv-')) return item;
+  const validTv = (await Promise.all(tvPromises)).filter(Boolean) as ReleaseItem[];
+  items = [...items, ...validTv];
 
-      const tmdbId = parseInt(item.id.split('-')[1]);
-      if (isNaN(tmdbId)) return item;
-
-      const details = await fetchTmdbDetails(tmdbId);
-      
-      if (details && details.networks && details.networks.length > 0) {
-          const networks = details.networks.slice(0, 2).map((n: any) => n.name).join(', ');
-          return { ...item, platform: networks };
-      }
-      return item;
-  };
-
-  const enrichedItems = await Promise.all(items.map(enrichItem));
-
-  return { items: enrichedItems, groundingLinks: [] };
+  return { items: items, groundingLinks: [] };
 };
