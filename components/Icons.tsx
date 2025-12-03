@@ -42,3 +42,4 @@ export const IconBookmark = ({ className }: { className?: string }) => <Bookmark
 export const IconBookmarkCheck = ({ className }: { className?: string }) => <BookmarkCheck className={className} />;
 export const IconWifiOff = ({ className }: { className?: string }) => <WifiOff className={className} />;
 export const IconRefresh = ({ className }: { className?: string }) => <RefreshCw className={className} />;
+export const IconTv = ({ className }: { className?: string }) => <Tv className={className} />;

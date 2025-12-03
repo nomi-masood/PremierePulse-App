@@ -1,9 +1,10 @@
+
 export type Category = 'All' | 'Anime' | 'Drama' | 'Movie' | 'Series' | 'Documentary';
 
 export interface ReleaseItem {
   id: string;
   title: string;
-  category: 'Anime' | 'Drama' | 'Movie' | 'Series' | 'Documentary';
+  category: Category;
   episode?: string;
   time?: string;
   platform?: string;
