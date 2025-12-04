@@ -16,7 +16,6 @@ export interface ReleaseItem {
   deepLink?: string; // Direct link to streaming service
   rating?: number; // 0-10 scale
   subGenres?: string[];
-  trailerKey?: string; // YouTube video ID
 }
 
 export interface GroundingMetadata {

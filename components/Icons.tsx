@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { 
   Clapperboard, 
@@ -24,7 +25,6 @@ import {
   List,
   ChevronLeft,
   ChevronRight,
-  Play,
   Star
 } from 'lucide-react';
 
@@ -53,5 +53,4 @@ export const IconLayoutGrid = ({ className }: { className?: string }) => <Layout
 export const IconList = ({ className }: { className?: string }) => <List className={className} />;
 export const IconChevronLeft = ({ className }: { className?: string }) => <ChevronLeft className={className} />;
 export const IconChevronRight = ({ className }: { className?: string }) => <ChevronRight className={className} />;
-export const IconPlay = ({ className }: { className?: string }) => <Play className={className} />;
 export const IconStar = ({ className }: { className?: string }) => <Star className={className} />;

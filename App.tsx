@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, ReactNode } from 'react';
 import { fetchDailyReleases } from './services/geminiService';
 import { ReleaseItem, Category, FetchResponse } from './types';
 import { 
@@ -17,18 +16,17 @@ import {
   IconSettings, 
   IconX, 
   IconSearch,
-  IconAlertTriangle,
-  IconBookmark,
-  IconBookmarkCheck,
-  IconWifiOff,
-  IconRefresh,
-  IconTv,
-  IconLayoutGrid,
-  IconList,
-  IconChevronLeft,
-  IconChevronRight,
-  IconPlay,
-  IconStar
+  IconAlertTriangle, 
+  IconBookmark, 
+  IconBookmarkCheck, 
+  IconWifiOff, 
+  IconRefresh, 
+  IconTv, 
+  IconLayoutGrid, 
+  IconList, 
+  IconChevronLeft, 
+  IconChevronRight, 
+  IconStar 
 } from './components/Icons';
 
 // --- Types ---
@@ -136,6 +134,8 @@ const tokenize = (str: string) => normalizeStr(str).split(' ').filter(t => t.len
 
 const PlatformIcon = ({ name, className = "w-3 h-3" }: { name: string; className?: string }) => {
   const n = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  
+  // Streaming Services
   if (n.includes('netflix')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#E50914]`}><path d="M14.017 21L14.017 18.0044L14.017 16.0776L21.108 8.79056L21.108 21.0008L24 21.0008L24 2.9928L19.912 2.9928L11.002 12.6072L11.002 5.9928L11.002 2.9928L2.9912 2.9928L2.9912 21L8 21L8 12.3176L14.017 18.8472L14.017 21Z" /></svg>;
   if (n.includes('disney')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#113CCF]`}><path d="M10.86,13.41c-0.5-0.12-1.46-0.34-1.92-0.45l-0.03,0.01c0,0-0.65,2.15-0.65,2.15 c0,0,1.52,0.35,2.02,0.48c0.61,0.16,0.85-0.03,0.92-0.29C11.28,14.93,10.86,13.41,10.86,13.41z M17.43,8.04 c-0.18-0.08-0.38-0.12-0.6-0.12c-0.61,0-1.16,0.32-1.46,0.84c-0.06,0.1-0.1,0.21-0.12,0.32l-0.01,0.04 c-0.01,0.11-0.02,0.22-0.02,0.33c-0.62,4.89-1.99,10.23-6.52,11.23c-0.45,0.1-0.91,0.15-1.37,0.15c-1.89,0-3.61-0.85-4.73-2.16 c-0.26-0.31-0.49-0.63-0.7-0.97c-0.81-1.33-1.28-2.9-1.28-4.57c0-2.3,0.88-4.39,2.33-5.93c1.4-1.49,3.37-2.42,5.55-2.42 c0.69,0,1.35,0.09,1.99,0.27c0.41,0.11,0.81,0.26,1.2,0.43c0.16-0.6,0.7-1.04,1.35-1.04c0.77,0,1.4,0.63,1.4,1.4 c0,0.15-0.02,0.29-0.07,0.43c1.23,0.56,2.33,1.36,3.24,2.35l-1.35,1.32C17.75,8.5,17.43,8.04,17.43,8.04z" /></svg>;
   if (n.includes('amazon') || n.includes('prime')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#00A8E1]`}><path d="M19.46 16.29C19.1 16.48 18.72 16.59 18.32 16.59C17.65 16.59 17.15 16.29 17.15 15.68V10.74C17.15 9.77 16.74 9.17 15.74 9.17C14.71 9.17 14.15 9.89 14.15 11.08V15.68H11.95V10.74C11.95 9.77 11.54 9.17 10.53 9.17C9.5 9.17 8.95 9.89 8.95 11.08V16.4H6.75V8.16H8.95V8.89C9.27 8.35 10 7.96 10.92 7.96C11.83 7.96 12.63 8.35 13 9.07C13.43 8.35 14.22 7.96 15.13 7.96C17.12 7.96 19.35 9.05 19.35 11.56V16.4H21.55V11.09C21.55 10.27 22.21 9.61 23.03 9.61H24V7.41H23.03C21 7.41 19.35 9.05 19.35 11.09V14.51C19.35 15.3 19.78 15.93 20.46 16.14L19.46 16.29ZM13.84 21.05C11.97 22.06 7.42 22.56 3.03 21.09C1.94 20.72 0.44 20.07 0 19.33C0.84 19.26 2.44 19.41 3.23 19.38C6.91 19.23 11.39 18.3 13.9 16.89C14.17 16.74 14.79 17.27 14.65 17.47C14.53 17.64 14.27 17.81 13.84 21.05Z" /></svg>;
@@ -143,11 +143,17 @@ const PlatformIcon = ({ name, className = "w-3 h-3" }: { name: string; className
   if (n.includes('funimation')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#5D0084]`}><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12 12-12C5.373 0 0 5.373 0 12zm8.5 3h-5v5h5v3.5h-5v-1.5h-2v1.5h-1.5v-1.5h-2v1.5H8.5V15h-2v3.5H3V7.5h15.5V15z" /></svg>;
   if (n.includes('hbo') || n.includes('max')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-white`}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-2h2v2zm0-4h-2V7h2v6zm4 4h-2v-2h2v2zm0-4h-2V7h2v6z" /></svg>;
   if (n.includes('youtube')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#FF0000]`}><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>;
-  if (n.includes('viki')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#00A3E0]`}><circle cx="12" cy="12" r="10"/></svg>;
-  if (n.includes('peacock')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#000000]`}><circle cx="12" cy="12" r="10"/></svg>;
+  if (n.includes('viki')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#00A3E0]`}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15c-1.3 0-2.43-.37-3.3-1.01l.9-1.42c.67.43 1.5.67 2.4.67 1.55 0 2.5-1.01 2.5-2.67V7h2v5.6c0 2.67-1.74 4.4-4.5 4.4zm-5-3.5H5V7h2v6.5zm-2.8-1.7L3.1 9.9 5 7h1.6l-2.4 3.6z"/></svg>;
+  if (n.includes('peacock')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-white`}><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none"/></svg>;
   if (n.includes('paramount')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#0064FF]`}><circle cx="12" cy="12" r="10"/></svg>;
   if (n.includes('tubi')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#FA4221]`}><circle cx="12" cy="12" r="10"/></svg>;
   if (n.includes('pluto')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-white`}><circle cx="12" cy="12" r="10"/></svg>;
+  if (n.includes('apple')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#A2AAAD]`}><path d="M17.1,12.7c0-2.5,2-3.7,2.1-3.8c-1.1-1.6-2.9-1.8-3.5-1.9c-1.5-0.1-2.9,0.9-3.7,0.9c-0.8,0-1.9-0.8-3.1-0.8 C7.3,7.2,5.7,8,4.9,9.5C3.2,12.3,4.4,16.5,6.1,18.9c0.8,1.2,1.8,2.5,3,2.4c1.2-0.1,1.7-0.8,3.1-0.8c1.5,0,1.9,0.8,3.1,0.7 c1.3-0.1,2.1-1.2,2.9-2.3c0.9-1.3,1.3-2.6,1.3-2.6C19.3,16.3,17.1,15.1,17.1,12.7z M15,5.5c0.7-0.8,1.1-1.9,1-3 c-0.9,0-2.1,0.6-2.7,1.4C12.7,4.7,12.3,5.8,12.4,6.9C13.4,6.9,14.5,6.3,15,5.5z"/></svg>;
+  if (n.includes('hulu')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#1CE783]`}><rect x="2" y="5" width="20" height="14" rx="2" /></svg>;
+  if (n.includes('hidive')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#00AEEF]`}><rect x="2" y="2" width="20" height="20" rx="2" /></svg>;
+  if (n.includes('bilibili')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#00A1D6]`}><rect x="2" y="5" width="20" height="14" rx="2" /></svg>;
+  
+  // Generic Fallbacks
   if (n.includes('theater')) return <IconMovie className={`${className} text-amber-500`} />;
   if (n.includes('tv') || n.includes('channel') || n.includes('network') || n.includes('bbc') || n.includes('abc') || n.includes('nbc') || n.includes('cbs') || n.includes('fox') || n.includes('cw') || n.includes('syfy') || n.includes('fx') || n.includes('amc')) {
       return <IconTv className={`${className} text-slate-400`} />;
@@ -170,12 +176,19 @@ const HighlightText = ({ text, highlight }: { text: string; highlight: string })
 
 // --- Main Components ---
 
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { hasError: false };
-  }
-  static getDerivedStateFromError() { return { hasError: true }; }
+interface ErrorBoundaryProps {
+  children?: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(error: any): ErrorBoundaryState { return { hasError: true }; }
+  
   render() {
     if (this.state.hasError) {
       return (
@@ -219,18 +232,6 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }: { isOpen: boolean;
   );
 };
 
-const TrailerModal = ({ isOpen, onClose, videoId }: { isOpen: boolean; onClose: () => void; videoId: string }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-black border border-slate-700 rounded-xl w-full max-w-4xl aspect-video shadow-2xl relative" onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} className="absolute -top-10 right-0 p-2 text-white hover:text-indigo-400 transition"><IconX className="w-6 h-6" /></button>
-        <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${videoId}?autoplay=1`} title="Trailer" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen className="rounded-xl"></iframe>
-      </div>
-    </div>
-  );
-};
-
 const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message }: { isOpen: boolean; onClose: () => void; onConfirm: () => void; title: string; message: string; }) => {
   if (!isOpen) return null;
   return (
@@ -250,7 +251,7 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message }: { isO
   );
 };
 
-const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNotify: (id: string, title: string) => Promise<void>; onToggleWatchlist: (id: string) => void; isNotified: boolean; isWatchlisted: boolean; searchQuery: string; onPlayTrailer: (id: string) => void; }> = ({ item, viewMode, onToggleNotify, onToggleWatchlist, isNotified, isWatchlisted, searchQuery, onPlayTrailer }) => {
+const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNotify: (id: string, title: string) => Promise<void>; onToggleWatchlist: (id: string) => void; isNotified: boolean; isWatchlisted: boolean; searchQuery: string; }> = ({ item, viewMode, onToggleNotify, onToggleWatchlist, isNotified, isWatchlisted, searchQuery }) => {
   const [imgState, setImgState] = useState<'loading' | 'low-res-loaded' | 'high-res-loaded' | 'error'>('loading');
   const [imgSrc, setImgSrc] = useState<string | undefined>(undefined);
   
@@ -336,9 +337,6 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
                 {platforms.length > 0 && <div className="flex items-center gap-3">{platforms.map(p => <div key={p} className="flex items-center gap-1.5 text-slate-300"><PlatformIcon name={p} className="w-4 h-4" /><span className="hidden sm:inline text-xs">{p}</span></div>)}</div>}
              </div>
              <div className="flex gap-2">
-                {item.trailerKey && (
-                  <button onClick={() => onPlayTrailer(item.trailerKey!)} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/10 hover:bg-red-600 hover:text-white text-red-400 rounded-lg text-xs font-medium transition-all"><IconPlay className="w-3 h-3 fill-current" /> Trailer</button>
-                )}
                 <a href={item.deepLink || item.link} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-indigo-400 transition-colors">Watch <IconExternal className="w-3 h-3" /></a>
              </div>
           </div>
@@ -371,9 +369,6 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
             {item.subGenres && <div className="flex flex-wrap gap-1.5 justify-center mb-3">{item.subGenres.map(g => <span key={g} className="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded">{g}</span>)}</div>}
             <p className="text-slate-300 text-sm line-clamp-5 leading-relaxed mb-4"><HighlightText text={item.description || ''} highlight={searchQuery} /></p>
             <div className="flex justify-center gap-3">
-              {item.trailerKey && (
-                <button onClick={(e) => { e.stopPropagation(); onPlayTrailer(item.trailerKey!); }} className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white border border-red-500 shadow-lg shadow-red-900/20 rounded-lg text-xs font-bold flex items-center gap-1.5 transition transform active:scale-95"><IconPlay className="w-3 h-3 fill-current" /> Watch Trailer</button>
-              )}
               {item.link && (
                 <a href={item.deepLink || item.link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white border border-indigo-500 shadow-lg shadow-indigo-900/20 rounded-lg text-xs font-bold flex items-center gap-1.5 transition transform active:scale-95">Source <IconExternal className="w-3 h-3" /></a>
               )}
@@ -406,7 +401,6 @@ const AppContent = () => {
   const [settings, setSettings] = useState<AppSettings>(() => JSON.parse(localStorage.getItem('premierepulse_settings') || '{"notificationsEnabled": true, "alertTiming": "at-release", "soundEnabled": false}'));
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, id: string, title: string} | null>(null);
-  const [trailerModal, setTrailerModal] = useState<string | null>(null);
 
   useEffect(() => { localStorage.setItem('premierepulse_notifications', JSON.stringify(notifications)); }, [notifications]);
   useEffect(() => { localStorage.setItem('premierepulse_watchlist', JSON.stringify(watchlist)); }, [watchlist]);
@@ -496,7 +490,6 @@ const AppContent = () => {
     <div className="min-h-screen pb-12">
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} onSave={setSettings} />
       <ConfirmationModal isOpen={!!confirmModal} onClose={() => setConfirmModal(null)} onConfirm={confirmRemoveNotification} title="Remove Notification?" message={`Are you sure you want to stop receiving alerts for "${confirmModal?.title}"?`} />
-      <TrailerModal isOpen={!!trailerModal} onClose={() => setTrailerModal(null)} videoId={trailerModal || ''} />
 
       {/* Modern Two-Tier Header */}
       <header className="sticky top-0 z-40 w-full">
@@ -602,7 +595,6 @@ const AppContent = () => {
                 isNotified={notifications.includes(item.id)}
                 isWatchlisted={watchlist.includes(item.id)}
                 searchQuery={searchQuery}
-                onPlayTrailer={(id) => setTrailerModal(id)}
               />
             ))}
           </div>
