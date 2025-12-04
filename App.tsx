@@ -152,6 +152,8 @@ const PlatformIcon = ({ name, className = "w-3 h-3" }: { name: string; className
   if (n.includes('hulu')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#1CE783]`}><rect x="2" y="5" width="20" height="14" rx="2" /></svg>;
   if (n.includes('hidive')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#00AEEF]`}><rect x="2" y="2" width="20" height="20" rx="2" /></svg>;
   if (n.includes('bilibili')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#00A1D6]`}><rect x="2" y="5" width="20" height="14" rx="2" /></svg>;
+  if (n.includes('iqiyi')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#00CC36]`}><rect x="2" y="5" width="20" height="14" rx="2" /></svg>;
+  if (n.includes('rakuten')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#BF0000]`}><circle cx="12" cy="12" r="10" /></svg>;
   
   // Generic Fallbacks
   if (n.includes('theater')) return <IconMovie className={`${className} text-amber-500`} />;
@@ -185,7 +187,10 @@ interface ErrorBoundaryState {
 }
 
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = { hasError: false };
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
   static getDerivedStateFromError(error: any): ErrorBoundaryState { return { hasError: true }; }
   
@@ -377,7 +382,7 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
       </div>
       <div className="p-4 relative bg-slate-800">
         <h3 className="font-bold text-slate-100 text-lg leading-tight mb-3 line-clamp-1 group-hover:text-indigo-400 transition-colors" title={item.title}><HighlightText text={item.title} highlight={searchQuery} /></h3>
-        {platforms.length > 0 && <div className="flex flex-wrap gap-2 mb-4 h-6 overflow-hidden">{platforms.map(p => <div key={p} className="flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-slate-700/50 border border-slate-600/50 text-[10px] text-slate-300"><PlatformIcon name={p} className="w-3 h-3" /><span>{p}</span></div>)}</div>}
+        {platforms.length > 0 && <div className="flex flex-wrap gap-2 mb-4">{platforms.map(p => <div key={p} className="flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-slate-700/50 border border-slate-600/50 text-[10px] text-slate-300"><PlatformIcon name={p} className="w-3 h-3" /><span>{p}</span></div>)}</div>}
         <div className="flex items-center gap-2 mt-auto pt-3 border-t border-slate-700/50">
           <button onClick={() => onToggleWatchlist(item.id)} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${isWatchlisted ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white'}`}>{isWatchlisted ? <><IconBookmarkCheck className="w-4 h-4" /> Added</> : <><IconBookmark className="w-4 h-4" /> Watchlist</>}</button>
           <button onClick={() => onToggleNotify(item.id, item.title)} className={`p-2 rounded-lg transition-all ${isNotified ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'}`} title="Toggle Notification">{isNotified ? <IconBellActive className="w-5 h-5" /> : <IconBell className="w-5 h-5" />}</button>
