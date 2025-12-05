@@ -206,8 +206,8 @@ async function fetchTmdbTv(isoDate: string, region: string): Promise<any[]> {
 
 async function fetchTmdbDetails(id: number, type: 'tv' | 'movie' = 'tv'): Promise<any> {
     try {
-        // Enriched fetch: watch providers for deep links (removed videos to save bandwidth)
-        const url = `${TMDB_BASE_URL}/${type}/${id}?api_key=${TMDB_API_KEY}&append_to_response=watch/providers`;
+        // Enriched fetch: watch providers for deep links, external IDs for IMDB
+        const url = `${TMDB_BASE_URL}/${type}/${id}?api_key=${TMDB_API_KEY}&append_to_response=watch/providers,external_ids`;
         const res = await fetch(url);
         if (!res.ok) return null;
         return await res.json();
@@ -282,7 +282,7 @@ async function fetchAniListMedia(ids: number[]): Promise<ReleaseItem[]> {
         }
 
         return {
-            id: `anilist-${media.id}`, // We'll assume the watchlist ID was base media ID if possible, but for now we map back to generic
+            id: `anilist-${media.id}`,
             title,
             category: 'Anime',
             description: media.description ? media.description.replace(/<[^>]*>?/gm, '') : 'No description available.',
@@ -314,7 +314,6 @@ export const fetchItemsByIds = async (ids: string[], region: string = 'US'): Pro
         if (id.startsWith('movie-')) tmdbMovieIds.push(parseInt(id.replace('movie-', '')));
         else if (id.startsWith('tv-')) tmdbTvIds.push(parseInt(id.replace('tv-', '')));
         else if (id.startsWith('anilist-')) {
-            // ID format: anilist-{mediaId}-{episode} or just anilist-{mediaId}
             const parts = id.split('-');
             if (parts[1]) anilistIds.push(parseInt(parts[1]));
         }
@@ -336,10 +335,11 @@ export const fetchItemsByIds = async (ids: string[], region: string = 'US'): Pro
             description: m.overview,
             releaseDate: m.release_date,
             imageUrl: m.poster_path ? `${IMAGE_BASE}${m.poster_path}` : undefined,
-            time: m.release_date, // Just date for movies usually
+            time: m.release_date, 
             platform: platformStr,
             link: `https://www.themoviedb.org/movie/${m.id}`,
             rating: m.vote_average,
+            imdbId: m.external_ids?.imdb_id,
             popularity: m.popularity,
             subGenres: m.genres?.map((g: any) => g.name).slice(0, 3)
         } as ReleaseItem;
@@ -361,8 +361,6 @@ export const fetchItemsByIds = async (ids: string[], region: string = 'US'): Pro
         if (genres.includes(99)) category = 'Documentary';
         else if (genres.includes(18) && (origin.some((c: string) => ['KR', 'CN', 'TW', 'TH', 'JP'].includes(c)))) category = 'Drama';
 
-        // Check next episode if available (TMDB doesn't always give easy next ep info in detail view without season query, 
-        // but 'next_episode_to_air' field exists)
         let timeString = 'TBA';
         let releaseDate = 'TBA';
         let episode = undefined;
@@ -373,10 +371,8 @@ export const fetchItemsByIds = async (ids: string[], region: string = 'US'): Pro
             releaseDate = t.next_episode_to_air.air_date;
             timeString = 'Upcoming'; 
             episode = `S${t.next_episode_to_air.season_number}E${t.next_episode_to_air.episode_number}`;
-            // Timestamp might be rough since air_date is just YYYY-MM-DD usually
             timestamp = d.getTime();
         } else if (t.last_episode_to_air) {
-             // Show last aired if no upcoming
              const d = new Date(t.last_episode_to_air.air_date);
              releaseDate = t.last_episode_to_air.air_date;
              timeString = 'Aired';
@@ -396,6 +392,7 @@ export const fetchItemsByIds = async (ids: string[], region: string = 'US'): Pro
             platform: platformStr,
             link: `https://www.themoviedb.org/tv/${t.id}`,
             rating: t.vote_average,
+            imdbId: t.external_ids?.imdb_id,
             popularity: t.popularity,
             subGenres: t.genres?.map((g: any) => g.name).slice(0, 3)
         } as ReleaseItem;
@@ -438,7 +435,7 @@ export const fetchDailyReleases = async (date: Date, region: string = 'US'): Pro
 
       if (!tmdbId) return null;
 
-      // Hydrate with TMDB Data for Image/Network
+      // Hydrate with TMDB Data for Image/Network/External IDs
       const tmdbData = await fetchTmdbDetails(tmdbId, 'tv');
       if (!tmdbData) return null;
 
@@ -459,7 +456,6 @@ export const fetchDailyReleases = async (date: Date, region: string = 'US'): Pro
       const networksArr = tmdbData.networks?.slice(0, 1).map((n: any) => n.name) || [];
       const providersArr = tmdbData['watch/providers']?.results?.[region]?.flatrate?.slice(0, 2).map((p: any) => p.provider_name) || [];
       
-      // Combine unique platforms
       const platformsList = [...new Set([...networksArr, ...providersArr])];
       const networks = platformsList.length > 0 ? platformsList.join(', ') : 'Trakt';
 
@@ -468,7 +464,6 @@ export const fetchDailyReleases = async (date: Date, region: string = 'US'): Pro
       const timeDate = new Date(item.first_aired);
       const timeString = timeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       
-      // Extract deep link (Use region)
       const providerLink = tmdbData['watch/providers']?.results?.[region]?.link;
 
       return {
@@ -485,6 +480,7 @@ export const fetchDailyReleases = async (date: Date, region: string = 'US'): Pro
           link: `https://trakt.tv/shows/${show.ids.slug}`,
           deepLink: providerLink,
           rating: tmdbData.vote_average,
+          imdbId: tmdbData.external_ids?.imdb_id,
           popularity: tmdbData.popularity,
           subGenres: genreNames.slice(0, 3)
       } as ReleaseItem;
@@ -499,12 +495,11 @@ export const fetchDailyReleases = async (date: Date, region: string = 'US'): Pro
     if (['hi', 'te', 'ta', 'kn', 'ml'].includes(m.original_language)) return null;
     if (m.genre_ids?.includes(16) && m.original_language === 'ja') return null;
 
-    // Fetch details for watch link
+    // Fetch details for watch link and external IDs
     const details = await fetchTmdbDetails(m.id, 'movie');
     const providerLink = details?.['watch/providers']?.results?.[region]?.link;
     const genreNames = details?.genres?.map((g: any) => g.name) || [];
     
-    // Providers
     const providers = details?.['watch/providers']?.results?.[region]?.flatrate?.slice(0, 2).map((p: any) => p.provider_name) || [];
     const platformStr = providers.length > 0 ? providers.join(', ') : 'Theaters / Digital';
 
@@ -520,6 +515,7 @@ export const fetchDailyReleases = async (date: Date, region: string = 'US'): Pro
       link: `https://www.themoviedb.org/movie/${m.id}`,
       deepLink: providerLink,
       rating: m.vote_average,
+      imdbId: details?.external_ids?.imdb_id,
       popularity: m.popularity,
       subGenres: genreNames.slice(0, 3)
     } as ReleaseItem;
@@ -553,7 +549,6 @@ export const fetchDailyReleases = async (date: Date, region: string = 'US'): Pro
     // Enrich
     const details = await fetchTmdbDetails(t.id, 'tv');
     
-    // Combine Networks and Watch Providers
     const networksArr = details?.networks?.slice(0, 1).map((n: any) => n.name) || [];
     const providersArr = details?.['watch/providers']?.results?.[region]?.flatrate?.slice(0, 2).map((p: any) => p.provider_name) || [];
     const platformsList = [...new Set([...networksArr, ...providersArr])];
@@ -575,6 +570,7 @@ export const fetchDailyReleases = async (date: Date, region: string = 'US'): Pro
       link: `https://www.themoviedb.org/tv/${t.id}`,
       deepLink: providerLink,
       rating: t.vote_average,
+      imdbId: details?.external_ids?.imdb_id,
       popularity: t.popularity,
       subGenres: genreNames.slice(0, 3)
     } as ReleaseItem;

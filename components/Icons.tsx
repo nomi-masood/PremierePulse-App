@@ -117,7 +117,6 @@ const PLATFORM_MAP: PlatformConfig[] = [
   { 
     keys: ['peacock'], 
     color: 'text-white',
-    // Stylized dots for Peacock
     path: <path d="M12 5a2 2 0 100-4 2 2 0 000 4zm-4.5 3a2 2 0 100-4 2 2 0 000 4zm9 0a2 2 0 100-4 2 2 0 000 4zm-13 4.5a2 2 0 100-4 2 2 0 000 4zm17 0a2 2 0 100-4 2 2 0 000 4zm-13 4.5a2 2 0 100-4 2 2 0 000 4zm9 0a2 2 0 100-4 2 2 0 000 4z" /> 
   },
   { 
@@ -133,7 +132,6 @@ const PLATFORM_MAP: PlatformConfig[] = [
   { 
     keys: ['funimation'], 
     color: 'text-[#5D0084]', 
-    // Stylized smile
     path: <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15.5c-2.33 0-4.32-1.45-5.12-3.5h1.67c.69 1.19 1.97 2 3.45 2s2.75-.81 3.45-2h1.67c-.8 2.05-2.79 3.5-5.12 3.5zm3-8a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm-6 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3z" />
   },
   { 
@@ -193,7 +191,7 @@ const PLATFORM_MAP: PlatformConfig[] = [
   },
   {
     keys: ['mubi'],
-    color: 'text-[#000000]', // Mubi is often black/white
+    color: 'text-[#000000]', 
     path: <rect x="2" y="5" width="20" height="14" rx="2" />
   },
   {
@@ -226,9 +224,16 @@ const PLATFORM_MAP: PlatformConfig[] = [
 // Encapsulated logic for matching
 const getPlatformMatch = (name: string): PlatformConfig | undefined => {
   const n = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  // Specific override for tricky ones
-  if (n.includes('amazon') || n.includes('prime')) return PLATFORM_MAP.find(p => p.keys.includes('prime'));
   
+  // Specific checks for overlapping or ambiguous names
+  if (n.includes('amazon') || n.includes('prime')) return PLATFORM_MAP.find(p => p.keys.includes('prime'));
+  if (n.includes('apple')) return PLATFORM_MAP.find(p => p.keys.includes('apple'));
+  if (n.includes('hbo') || n === 'max') return PLATFORM_MAP.find(p => p.keys.includes('max'));
+  if (n.includes('paramount')) return PLATFORM_MAP.find(p => p.keys.includes('paramount'));
+  if (n.includes('peacock')) return PLATFORM_MAP.find(p => p.keys.includes('peacock'));
+  if (n.includes('disney')) return PLATFORM_MAP.find(p => p.keys.includes('disney'));
+  
+  // General match
   return PLATFORM_MAP.find(p => p.keys.some(k => n.includes(k)));
 };
 
@@ -238,10 +243,6 @@ export const PlatformIcon = ({ name, className = "w-4 h-4" }: { name: string; cl
   // Subtle glow effect matching brand color
   const glowStyle = matched ? { filter: `drop-shadow(0 0 1px currentColor)` } : undefined;
 
-  // Enhancements:
-  // 1. Hover effect (scale + brightness)
-  // 2. Flex-shrink-0 to prevent icon squishing
-  // 3. Consistent sizing (controlled by className prop, default w-4 h-4)
   const baseClasses = `${className} flex-shrink-0 transition-transform duration-200`;
   const interactiveClasses = `hover:scale-110 hover:brightness-125`;
 
@@ -252,7 +253,6 @@ export const PlatformIcon = ({ name, className = "w-4 h-4" }: { name: string; cl
         fill="currentColor"
         className={`${baseClasses} ${interactiveClasses} ${matched.color} drop-shadow-sm`}
         style={glowStyle}
-        aria-label={name}
       >
         <title>{name}</title>
         {matched.path}
@@ -260,7 +260,6 @@ export const PlatformIcon = ({ name, className = "w-4 h-4" }: { name: string; cl
     );
   }
 
-  // Normalization for fallbacks
   const n = name.toLowerCase().replace(/[^a-z0-9]/g, '');
 
   if (n.includes('theater') || n.includes('cinema') || n.includes('boxoffice')) {

@@ -14,7 +14,9 @@ export interface ReleaseItem {
   imageUrl?: string;
   link?: string;
   deepLink?: string; // Direct link to streaming service
-  rating?: number; // 0-10 scale
+  rating?: number; // 0-10 scale (TMDB/AniList)
+  imdbRating?: number; // 0-10 scale (IMDB)
+  imdbId?: string;
   popularity?: number; // For sorting
   subGenres?: string[];
 }

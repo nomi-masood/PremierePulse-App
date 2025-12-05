@@ -300,6 +300,22 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
     return <span>{localTime}</span>;
   };
 
+  const RatingDisplay = () => (
+    <div className="flex gap-2">
+        {item.rating && (
+            <span className="px-2 py-1 rounded-md bg-slate-900/80 text-amber-400 text-xs font-bold backdrop-blur-md border border-slate-700 shadow-lg flex items-center gap-1">
+                <IconStar className="w-3 h-3 fill-amber-400" />
+                {item.rating.toFixed(1)} <span className="text-[9px] opacity-70 ml-0.5 uppercase">{item.category === 'Anime' ? 'AniList' : 'TMDB'}</span>
+            </span>
+        )}
+        {item.imdbRating && (
+            <span className="px-2 py-1 rounded-md bg-yellow-400/10 text-yellow-300 text-xs font-bold backdrop-blur-md border border-yellow-500/30 shadow-lg flex items-center gap-1">
+                <span className="bg-yellow-400 text-black text-[9px] font-black px-1 rounded-sm leading-none py-0.5">IMDb</span> {item.imdbRating.toFixed(1)}
+            </span>
+        )}
+    </div>
+  );
+
   if (viewMode === 'list') {
     return (
       <div className="group relative bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col md:flex-row">
@@ -314,11 +330,7 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
               <div className="flex gap-2 items-center flex-wrap">
                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${badgeColor}`}>{item.category}</span>
                 {item.episode && <span className="text-xs text-slate-400 font-medium bg-slate-900 px-2 py-0.5 rounded">{item.episode}</span>}
-                {item.rating && (
-                  <span className="flex items-center gap-1 text-xs font-bold text-amber-400 bg-amber-900/20 px-1.5 py-0.5 rounded border border-amber-500/30">
-                    <IconStar className="w-3 h-3 fill-amber-400" /> {item.rating.toFixed(1)}
-                  </span>
-                )}
+                <RatingDisplay />
               </div>
               <div className="flex items-center gap-1">
                  <button onClick={() => onToggleWatchlist(item.id)} className={`p-2 rounded-lg transition-all ${isWatchlisted ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-slate-700 text-slate-400 hover:text-white'}`}>{isWatchlisted ? <IconBookmarkCheck className="w-5 h-5" /> : <IconBookmark className="w-5 h-5" />}</button>
@@ -363,8 +375,8 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
         {/* Top Badges */}
         <div className="absolute top-3 left-3 right-3 flex justify-between items-start">
            <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border backdrop-blur-md shadow-lg ${badgeColor}`}>{item.category}</span>
-           <div className="flex gap-1">
-             {item.rating && <span className="px-2 py-1 rounded-md bg-slate-900/80 text-amber-400 text-xs font-bold backdrop-blur-md border border-slate-700 shadow-lg flex items-center gap-1"><IconStar className="w-3 h-3 fill-amber-400" />{item.rating.toFixed(1)}</span>}
+           <div className="flex gap-1 flex-col items-end">
+             <RatingDisplay />
              {item.episode && <span className="px-2 py-1 rounded-md bg-slate-900/80 text-slate-200 text-xs font-bold backdrop-blur-md border border-slate-700 shadow-lg">{item.episode}</span>}
            </div>
         </div>
@@ -431,9 +443,9 @@ const AppContent = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, id: string, title: string} | null>(null);
 
-  // Swipe state
-  const [touchStart, setTouchStart] = useState<number | null>(null);
-  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  // Swipe state refs (optimization to avoid re-renders on scroll)
+  const touchStart = useRef<number | null>(null);
+  const touchEnd = useRef<number | null>(null);
   const minSwipeDistance = 75;
 
   useEffect(() => { localStorage.setItem('premierepulse_notifications', JSON.stringify(notifications)); }, [notifications]);
@@ -543,14 +555,16 @@ const AppContent = () => {
   
   // Swipe Handlers
   const onTouchStart = (e: React.TouchEvent) => {
-    setTouchEnd(null); 
-    setTouchStart(e.targetTouches[0].clientX);
+    touchEnd.current = null; 
+    touchStart.current = e.targetTouches[0].clientX;
   };
-  const onTouchMove = (e: React.TouchEvent) => setTouchEnd(e.targetTouches[0].clientX);
+  const onTouchMove = (e: React.TouchEvent) => {
+    touchEnd.current = e.targetTouches[0].clientX;
+  };
   const onTouchEnd = () => {
     if (appMode === 'watchlist') return; // Disable swipe in watchlist
-    if (!touchStart || !touchEnd) return;
-    const distance = touchStart - touchEnd;
+    if (!touchStart.current || !touchEnd.current) return;
+    const distance = touchStart.current - touchEnd.current;
     const isLeftSwipe = distance > minSwipeDistance;
     const isRightSwipe = distance < -minSwipeDistance;
     if (isLeftSwipe) handleNextDay();
