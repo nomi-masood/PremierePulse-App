@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo, useRef, ReactNode } from 'react';
-import { fetchDailyReleases } from './services/geminiService';
-import { ReleaseItem, Category, FetchResponse } from './types';
+
+import React, { useState, useEffect, useMemo, useRef, ReactNode, Component } from 'react';
+import { fetchDailyReleases, fetchItemsByIds } from './services/geminiService';
+import { ReleaseItem, Category, FetchResponse, AppSettings } from './types';
 import { 
   IconAnime, 
   IconDrama, 
@@ -26,18 +27,17 @@ import {
   IconList, 
   IconChevronLeft, 
   IconChevronRight, 
-  IconStar 
+  IconStar,
+  IconGlobe,
+  IconSort,
+  PlatformIcon
 } from './components/Icons';
 
 // --- Types ---
 
-interface AppSettings {
-  notificationsEnabled: boolean;
-  alertTiming: 'at-release' | '15-min-before' | '1-hour-before';
-  soundEnabled: boolean;
-}
-
 type ViewMode = 'grid' | 'list';
+type SortOption = 'popularity' | 'rating' | 'time';
+type AppMode = 'daily' | 'watchlist';
 
 // --- Constants ---
 
@@ -48,6 +48,20 @@ const FALLBACK_IMAGES = {
   Series: "https://images.unsplash.com/photo-1522869635100-894668ed3a63?q=60&w=400&auto=format&fit=crop", 
   Documentary: "https://images.unsplash.com/photo-1505664194779-8beaceb93744?q=60&w=400&auto=format&fit=crop"
 };
+
+const COUNTRIES = [
+  { code: 'US', name: 'United States' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'CA', name: 'Canada' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'JP', name: 'Japan' },
+  { code: 'KR', name: 'South Korea' },
+  { code: 'BR', name: 'Brazil' },
+  { code: 'DE', name: 'Germany' },
+  { code: 'FR', name: 'France' },
+  { code: 'IN', name: 'India' },
+  { code: 'PK', name: 'Pakistan' },
+];
 
 // --- Helper Hooks ---
 
@@ -132,37 +146,6 @@ const tokenize = (str: string) => normalizeStr(str).split(' ').filter(t => t.len
 
 // --- Helper Components ---
 
-const PlatformIcon = ({ name, className = "w-3 h-3" }: { name: string; className?: string }) => {
-  const n = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  
-  // Streaming Services
-  if (n.includes('netflix')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#E50914]`}><path d="M14.017 21L14.017 18.0044L14.017 16.0776L21.108 8.79056L21.108 21.0008L24 21.0008L24 2.9928L19.912 2.9928L11.002 12.6072L11.002 5.9928L11.002 2.9928L2.9912 2.9928L2.9912 21L8 21L8 12.3176L14.017 18.8472L14.017 21Z" /></svg>;
-  if (n.includes('disney')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#113CCF]`}><path d="M10.86,13.41c-0.5-0.12-1.46-0.34-1.92-0.45l-0.03,0.01c0,0-0.65,2.15-0.65,2.15 c0,0,1.52,0.35,2.02,0.48c0.61,0.16,0.85-0.03,0.92-0.29C11.28,14.93,10.86,13.41,10.86,13.41z M17.43,8.04 c-0.18-0.08-0.38-0.12-0.6-0.12c-0.61,0-1.16,0.32-1.46,0.84c-0.06,0.1-0.1,0.21-0.12,0.32l-0.01,0.04 c-0.01,0.11-0.02,0.22-0.02,0.33c-0.62,4.89-1.99,10.23-6.52,11.23c-0.45,0.1-0.91,0.15-1.37,0.15c-1.89,0-3.61-0.85-4.73-2.16 c-0.26-0.31-0.49-0.63-0.7-0.97c-0.81-1.33-1.28-2.9-1.28-4.57c0-2.3,0.88-4.39,2.33-5.93c1.4-1.49,3.37-2.42,5.55-2.42 c0.69,0,1.35,0.09,1.99,0.27c0.41,0.11,0.81,0.26,1.2,0.43c0.16-0.6,0.7-1.04,1.35-1.04c0.77,0,1.4,0.63,1.4,1.4 c0,0.15-0.02,0.29-0.07,0.43c1.23,0.56,2.33,1.36,3.24,2.35l-1.35,1.32C17.75,8.5,17.43,8.04,17.43,8.04z" /></svg>;
-  if (n.includes('amazon') || n.includes('prime')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#00A8E1]`}><path d="M19.46 16.29C19.1 16.48 18.72 16.59 18.32 16.59C17.65 16.59 17.15 16.29 17.15 15.68V10.74C17.15 9.77 16.74 9.17 15.74 9.17C14.71 9.17 14.15 9.89 14.15 11.08V15.68H11.95V10.74C11.95 9.77 11.54 9.17 10.53 9.17C9.5 9.17 8.95 9.89 8.95 11.08V16.4H6.75V8.16H8.95V8.89C9.27 8.35 10 7.96 10.92 7.96C11.83 7.96 12.63 8.35 13 9.07C13.43 8.35 14.22 7.96 15.13 7.96C17.12 7.96 19.35 9.05 19.35 11.56V16.4H21.55V11.09C21.55 10.27 22.21 9.61 23.03 9.61H24V7.41H23.03C21 7.41 19.35 9.05 19.35 11.09V14.51C19.35 15.3 19.78 15.93 20.46 16.14L19.46 16.29ZM13.84 21.05C11.97 22.06 7.42 22.56 3.03 21.09C1.94 20.72 0.44 20.07 0 19.33C0.84 19.26 2.44 19.41 3.23 19.38C6.91 19.23 11.39 18.3 13.9 16.89C14.17 16.74 14.79 17.27 14.65 17.47C14.53 17.64 14.27 17.81 13.84 21.05Z" /></svg>;
-  if (n.includes('crunchy')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#F47521]`}><path d="M4.69,15.82a6.38,6.38,0,0,1,6-9,6.23,6.23,0,0,1,3.46,1,7.24,7.24,0,0,0-2.82-.57,7.12,7.12,0,0,0-7.13,7.13,7.27,7.27,0,0,0,.52,2.7A6.32,6.32,0,0,1,4.69,15.82Zm14.28-7a5.57,5.57,0,0,1-.9,3.27,5.65,5.65,0,0,1-3,2.23,6.34,6.34,0,0,0,3.3-1.68A6.2,6.2,0,0,0,20.25,8.2a6,6,0,0,0-.31-1.92A5.63,5.63,0,0,1,19,8.78Zm-7.79,3.69a4.83,4.83,0,0,0-4.83,4.83,4.68,4.68,0,0,0,.76,2.6A5.56,5.56,0,0,1,6,17.3a5.59,5.59,0,0,1,5.59-5.59,5.71,5.71,0,0,1,2.83.75A4.8,4.8,0,0,0,11.18,12.47Z" /></svg>;
-  if (n.includes('funimation')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#5D0084]`}><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12 12-12C5.373 0 0 5.373 0 12zm8.5 3h-5v5h5v3.5h-5v-1.5h-2v1.5h-1.5v-1.5h-2v1.5H8.5V15h-2v3.5H3V7.5h15.5V15z" /></svg>;
-  if (n.includes('hbo') || n.includes('max')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-white`}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-2h2v2zm0-4h-2V7h2v6zm4 4h-2v-2h2v2zm0-4h-2V7h2v6z" /></svg>;
-  if (n.includes('youtube')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#FF0000]`}><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>;
-  if (n.includes('viki')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#00A3E0]`}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15c-1.3 0-2.43-.37-3.3-1.01l.9-1.42c.67.43 1.5.67 2.4.67 1.55 0 2.5-1.01 2.5-2.67V7h2v5.6c0 2.67-1.74 4.4-4.5 4.4zm-5-3.5H5V7h2v6.5zm-2.8-1.7L3.1 9.9 5 7h1.6l-2.4 3.6z"/></svg>;
-  if (n.includes('peacock')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-white`}><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none"/></svg>;
-  if (n.includes('paramount')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#0064FF]`}><circle cx="12" cy="12" r="10"/></svg>;
-  if (n.includes('tubi')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#FA4221]`}><circle cx="12" cy="12" r="10"/></svg>;
-  if (n.includes('pluto')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-white`}><circle cx="12" cy="12" r="10"/></svg>;
-  if (n.includes('apple')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#A2AAAD]`}><path d="M17.1,12.7c0-2.5,2-3.7,2.1-3.8c-1.1-1.6-2.9-1.8-3.5-1.9c-1.5-0.1-2.9,0.9-3.7,0.9c-0.8,0-1.9-0.8-3.1-0.8 C7.3,7.2,5.7,8,4.9,9.5C3.2,12.3,4.4,16.5,6.1,18.9c0.8,1.2,1.8,2.5,3,2.4c1.2-0.1,1.7-0.8,3.1-0.8c1.5,0,1.9,0.8,3.1,0.7 c1.3-0.1,2.1-1.2,2.9-2.3c0.9-1.3,1.3-2.6,1.3-2.6C19.3,16.3,17.1,15.1,17.1,12.7z M15,5.5c0.7-0.8,1.1-1.9,1-3 c-0.9,0-2.1,0.6-2.7,1.4C12.7,4.7,12.3,5.8,12.4,6.9C13.4,6.9,14.5,6.3,15,5.5z"/></svg>;
-  if (n.includes('hulu')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#1CE783]`}><rect x="2" y="5" width="20" height="14" rx="2" /></svg>;
-  if (n.includes('hidive')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#00AEEF]`}><rect x="2" y="2" width="20" height="20" rx="2" /></svg>;
-  if (n.includes('bilibili')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#00A1D6]`}><rect x="2" y="5" width="20" height="14" rx="2" /></svg>;
-  if (n.includes('iqiyi')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#00CC36]`}><rect x="2" y="5" width="20" height="14" rx="2" /></svg>;
-  if (n.includes('rakuten')) return <svg viewBox="0 0 24 24" fill="currentColor" className={`${className} text-[#BF0000]`}><circle cx="12" cy="12" r="10" /></svg>;
-  
-  // Generic Fallbacks
-  if (n.includes('theater')) return <IconMovie className={`${className} text-amber-500`} />;
-  if (n.includes('tv') || n.includes('channel') || n.includes('network') || n.includes('bbc') || n.includes('abc') || n.includes('nbc') || n.includes('cbs') || n.includes('fox') || n.includes('cw') || n.includes('syfy') || n.includes('fx') || n.includes('amc')) {
-      return <IconTv className={`${className} text-slate-400`} />;
-  }
-  return <IconExternal className={`${className} text-slate-400`} />;
-};
-
 const HighlightText = ({ text, highlight }: { text: string; highlight: string }) => {
   if (!highlight.trim()) return <>{text}</>;
   const regex = new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').split(' ').join('|')})`, 'gi');
@@ -186,7 +169,9 @@ interface ErrorBoundaryState {
   hasError: boolean;
 }
 
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState = { hasError: false };
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false };
@@ -226,6 +211,20 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }: { isOpen: boolean;
           <div>
             <label className="block text-sm font-medium text-slate-400 mb-2">Alert Timing</label>
             <select value={localSettings.alertTiming} onChange={(e) => setLocalSettings(s => ({...s, alertTiming: e.target.value as any}))} disabled={!localSettings.notificationsEnabled} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"><option value="at-release">At release time</option><option value="15-min-before">15 minutes before</option><option value="1-hour-before">1 hour before</option></select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-2">Streaming Region</label>
+            <div className="relative">
+              <IconGlobe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <select 
+                value={localSettings.region || 'US'} 
+                onChange={(e) => setLocalSettings(s => ({...s, region: e.target.value}))}
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 pl-10 text-slate-200 focus:ring-2 focus:ring-indigo-500"
+              >
+                {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+              </select>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">Shows "Where to Watch" links for this country.</p>
           </div>
         </div>
         <div className="p-4 bg-slate-900/50 border-t border-slate-800 flex justify-end gap-3">
@@ -351,13 +350,17 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
   }
 
   return (
-    <div className="group relative bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-indigo-500/20">
+    <div className="group relative bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-indigo-500/20 flex flex-col h-full">
       <div className="absolute inset-0 opacity-0 group-hover:opacity-10 pointer-events-none transition-opacity duration-500 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-500 via-purple-500 to-transparent" />
-      <div className="relative aspect-[2/3] bg-slate-900 overflow-hidden cursor-pointer" onClick={() => (item.deepLink || item.link) && window.open(item.deepLink || item.link, '_blank')}>
+      
+      {/* Image Container */}
+      <div className="relative aspect-[2/3] bg-slate-900 overflow-hidden cursor-pointer shrink-0" onClick={() => (item.deepLink || item.link) && window.open(item.deepLink || item.link, '_blank')}>
         {imgState === 'loading' && <div className="absolute inset-0 bg-slate-800 animate-pulse z-10" />}
         {lowResUrl && imgState !== 'error' && <img src={lowResUrl} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 blur-sm scale-110 ${imgState === 'high-res-loaded' ? 'opacity-0' : 'opacity-100'}`} onLoad={handleLowResLoad} alt="" />}
         {imgSrc && imgState !== 'error' ? <img src={imgSrc} alt={item.title} loading="lazy" decoding="async" onLoad={handleHighResLoad} onError={handleError} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ${imgState === 'high-res-loaded' ? 'opacity-100' : 'opacity-0'}`} /> : <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-800/80 p-6 text-center"><IconTv className="w-10 h-10 text-slate-400" /><span className="text-xs text-slate-500 font-medium">{item.category}</span></div>}
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent opacity-80" />
+        
+        {/* Top Badges */}
         <div className="absolute top-3 left-3 right-3 flex justify-between items-start">
            <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border backdrop-blur-md shadow-lg ${badgeColor}`}>{item.category}</span>
            <div className="flex gap-1">
@@ -365,11 +368,15 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
              {item.episode && <span className="px-2 py-1 rounded-md bg-slate-900/80 text-slate-200 text-xs font-bold backdrop-blur-md border border-slate-700 shadow-lg">{item.episode}</span>}
            </div>
         </div>
+
+        {/* Time Badge */}
         <div className="absolute bottom-3 left-3 group/time z-20">
           <div className={`flex items-center gap-1.5 px-3 py-1.5 ${countdown && !countdown.isPast ? 'bg-amber-600 text-white border-amber-500/50' : 'bg-indigo-600 text-white border-indigo-500/50'} rounded-lg shadow-lg font-bold text-sm backdrop-blur-sm border`}>
             <IconClock className="w-3.5 h-3.5" /> <TimeDisplay />
           </div>
         </div>
+
+        {/* Hover Overlay */}
         <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity duration-300 p-6 flex flex-col justify-center text-center z-30 pointer-events-none group-hover:pointer-events-auto">
             {item.subGenres && <div className="flex flex-wrap gap-1.5 justify-center mb-3">{item.subGenres.map(g => <span key={g} className="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded">{g}</span>)}</div>}
             <p className="text-slate-300 text-sm line-clamp-5 leading-relaxed mb-4"><HighlightText text={item.description || ''} highlight={searchQuery} /></p>
@@ -380,10 +387,25 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
             </div>
         </div>
       </div>
-      <div className="p-4 relative bg-slate-800">
-        <h3 className="font-bold text-slate-100 text-lg leading-tight mb-3 line-clamp-1 group-hover:text-indigo-400 transition-colors" title={item.title}><HighlightText text={item.title} highlight={searchQuery} /></h3>
-        {platforms.length > 0 && <div className="flex flex-wrap gap-2 mb-4">{platforms.map(p => <div key={p} className="flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-slate-700/50 border border-slate-600/50 text-[10px] text-slate-300"><PlatformIcon name={p} className="w-3 h-3" /><span>{p}</span></div>)}</div>}
-        <div className="flex items-center gap-2 mt-auto pt-3 border-t border-slate-700/50">
+
+      {/* Content Area */}
+      <div className="p-4 relative bg-slate-800/90 backdrop-blur-sm border-t border-slate-700/50 flex-1 flex flex-col">
+        <h3 className="font-bold text-slate-50 text-base md:text-lg leading-snug mb-2 line-clamp-2 min-h-[3rem] group-hover:text-indigo-400 transition-colors" title={item.title}><HighlightText text={item.title} highlight={searchQuery} /></h3>
+        
+        {/* Platforms with improved styling */}
+        {platforms.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4 mt-auto">
+            {platforms.map(p => (
+              <div key={p} className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-950/50 border border-slate-700/50 hover:border-indigo-500/30 hover:bg-slate-900 transition-colors cursor-default text-[10px] font-medium text-slate-300 shadow-sm whitespace-nowrap">
+                <PlatformIcon name={p} className="w-3.5 h-3.5" />
+                <span>{p}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {/* Actions */}
+        <div className={`flex items-center gap-2 pt-3 border-t border-slate-700/50 ${platforms.length === 0 ? 'mt-auto' : ''}`}>
           <button onClick={() => onToggleWatchlist(item.id)} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${isWatchlisted ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white'}`}>{isWatchlisted ? <><IconBookmarkCheck className="w-4 h-4" /> Added</> : <><IconBookmark className="w-4 h-4" /> Watchlist</>}</button>
           <button onClick={() => onToggleNotify(item.id, item.title)} className={`p-2 rounded-lg transition-all ${isNotified ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'}`} title="Toggle Notification">{isNotified ? <IconBellActive className="w-5 h-5" /> : <IconBell className="w-5 h-5" />}</button>
         </div>
@@ -401,11 +423,18 @@ const AppContent = () => {
   const debouncedSearch = useDebounce(searchQuery, 300);
   const [category, setCategory] = useState<Category>('All');
   const [viewMode, setViewMode] = useState<ViewMode>(() => localStorage.getItem('premierepulse_view_mode') as ViewMode || 'grid');
+  const [appMode, setAppMode] = useState<AppMode>('daily');
+  const [sortOption, setSortOption] = useState<SortOption>('popularity');
   const [notifications, setNotifications] = useState<string[]>(() => JSON.parse(localStorage.getItem('premierepulse_notifications') || '[]'));
   const [watchlist, setWatchlist] = useState<string[]>(() => JSON.parse(localStorage.getItem('premierepulse_watchlist') || '[]'));
-  const [settings, setSettings] = useState<AppSettings>(() => JSON.parse(localStorage.getItem('premierepulse_settings') || '{"notificationsEnabled": true, "alertTiming": "at-release", "soundEnabled": false}'));
+  const [settings, setSettings] = useState<AppSettings>(() => JSON.parse(localStorage.getItem('premierepulse_settings') || '{"notificationsEnabled": true, "alertTiming": "at-release", "soundEnabled": false, "region": "US"}'));
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, id: string, title: string} | null>(null);
+
+  // Swipe state
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const minSwipeDistance = 75;
 
   useEffect(() => { localStorage.setItem('premierepulse_notifications', JSON.stringify(notifications)); }, [notifications]);
   useEffect(() => { localStorage.setItem('premierepulse_watchlist', JSON.stringify(watchlist)); }, [watchlist]);
@@ -416,9 +445,25 @@ const AppContent = () => {
     setLoading(true);
     setError(null);
     try {
-      const cacheKey = `premierepulse_cache_${currentDate.toLocaleDateString('en-CA')}`;
+      // If Watchlist mode, fetch watchlist items specifically
+      if (appMode === 'watchlist') {
+          if (watchlist.length === 0) {
+              setReleases([]);
+              setLoading(false);
+              return;
+          }
+          // We don't cache watchlist view as heavily because it changes based on user's list
+          const items = await fetchItemsByIds(watchlist, settings.region || 'US');
+          setReleases(items);
+          setLoading(false);
+          return;
+      }
+
+      // Daily Release Mode
+      const cacheKey = `premierepulse_cache_${currentDate.toLocaleDateString('en-CA')}_${settings.region || 'US'}`;
       const cached = localStorage.getItem(cacheKey);
       let initialData: ReleaseItem[] = [];
+      
       if (cached && !forceRefresh) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed.data) && parsed.timestamp) {
@@ -431,7 +476,7 @@ const AppContent = () => {
            localStorage.removeItem(cacheKey);
         }
       }
-      const response: FetchResponse = await fetchDailyReleases(currentDate);
+      const response: FetchResponse = await fetchDailyReleases(currentDate, settings.region || 'US');
       setReleases(response.items);
       localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: response.items }));
     } catch (err: any) {
@@ -446,7 +491,15 @@ const AppContent = () => {
     }
   };
 
-  useEffect(() => { loadData(); }, [currentDate]);
+  useEffect(() => { loadData(); }, [currentDate, settings.region, appMode]); // Reload when mode changes
+
+  // We need to re-fetch watchlist if the watchlist array changes while we are in watchlist mode
+  useEffect(() => {
+    if (appMode === 'watchlist') {
+        loadData();
+    }
+  }, [watchlist]);
+
 
   const filteredReleases = useMemo(() => {
     let result = category === 'All' ? releases : releases.filter(r => r.category === category);
@@ -473,12 +526,37 @@ const AppContent = () => {
           }
           return { item, score };
         }).filter(r => r.score > 0).sort((a, b) => b.score - a.score).map(r => r.item);
+    } else {
+       if (sortOption === 'time') {
+           result = [...result].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+       } else if (sortOption === 'rating') {
+           result = [...result].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+       } else if (sortOption === 'popularity') {
+           result = [...result].sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+       }
     }
     return result;
-  }, [releases, category, debouncedSearch]);
+  }, [releases, category, debouncedSearch, sortOption]);
 
   const handlePrevDay = () => { const newDate = new Date(currentDate); newDate.setDate(currentDate.getDate() - 1); setCurrentDate(newDate); };
   const handleNextDay = () => { const newDate = new Date(currentDate); newDate.setDate(currentDate.getDate() + 1); setCurrentDate(newDate); };
+  
+  // Swipe Handlers
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null); 
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+  const onTouchMove = (e: React.TouchEvent) => setTouchEnd(e.targetTouches[0].clientX);
+  const onTouchEnd = () => {
+    if (appMode === 'watchlist') return; // Disable swipe in watchlist
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    if (isLeftSwipe) handleNextDay();
+    if (isRightSwipe) handlePrevDay();
+  };
+
   const handleToggleNotify = async (id: string, title: string) => {
     if (notifications.includes(id)) { setConfirmModal({ isOpen: true, id, title }); } 
     else {
@@ -491,8 +569,14 @@ const AppContent = () => {
   const handleToggleWatchlist = (id: string) => { setWatchlist(prev => prev.includes(id) ? prev.filter(w => w !== id) : [...prev, id]); };
   const handleCategoryChange = (newCat: Category) => { setCategory(newCat); setSearchQuery(''); };
 
+  const toggleAppMode = () => {
+    setAppMode(prev => prev === 'daily' ? 'watchlist' : 'daily');
+    setCategory('All');
+    setSearchQuery('');
+  };
+
   return (
-    <div className="min-h-screen pb-12">
+    <div className="min-h-screen flex flex-col pb-12">
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} onSave={setSettings} />
       <ConfirmationModal isOpen={!!confirmModal} onClose={() => setConfirmModal(null)} onConfirm={confirmRemoveNotification} title="Remove Notification?" message={`Are you sure you want to stop receiving alerts for "${confirmModal?.title}"?`} />
 
@@ -502,7 +586,7 @@ const AppContent = () => {
         <div className="bg-slate-900/90 backdrop-blur-xl border-b border-slate-800">
           <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
             {/* Logo */}
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-3 shrink-0 cursor-pointer" onClick={() => setAppMode('daily')}>
               <div className="w-9 h-9 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20">
                 <IconCalendar className="w-5 h-5 text-white" />
               </div>
@@ -517,10 +601,35 @@ const AppContent = () => {
                 {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white p-1 rounded-full hover:bg-slate-700 transition"><IconX className="w-3.5 h-3.5" /></button>}
               </div>
 
+               <div className="flex items-center gap-2 bg-slate-800/50 p-1 rounded-lg border border-slate-700/50">
+                <div className="relative">
+                    <select 
+                        value={sortOption} 
+                        onChange={(e) => setSortOption(e.target.value as SortOption)}
+                        className="appearance-none bg-transparent pl-8 pr-4 py-1.5 text-sm text-slate-300 font-medium focus:outline-none cursor-pointer hover:text-white"
+                        title="Sort By"
+                    >
+                        <option value="popularity" className="bg-slate-800 text-slate-300">Most Popular</option>
+                        <option value="rating" className="bg-slate-800 text-slate-300">Rating</option>
+                        <option value="time" className="bg-slate-800 text-slate-300">Time</option>
+                    </select>
+                    <IconSort className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                </div>
+              </div>
+
               <div className="flex items-center gap-2 bg-slate-800/50 p-1 rounded-lg border border-slate-700/50">
                 <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`} title="Grid View"><IconLayoutGrid className="w-4 h-4" /></button>
                 <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`} title="List View"><IconList className="w-4 h-4" /></button>
               </div>
+
+              <button 
+                onClick={toggleAppMode} 
+                className={`p-2 rounded-lg transition-all relative ${appMode === 'watchlist' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`} 
+                title="My Watchlist"
+              >
+                <IconBookmark className="w-5 h-5" />
+                {watchlist.length > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-emerald-500 rounded-full"></span>}
+              </button>
 
               <button onClick={() => loadData(true)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition" title="Refresh"><IconRefresh className={`w-5 h-5 ${loading ? 'animate-spin text-indigo-400' : ''}`} /></button>
               <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition" title="Settings"><IconSettings className="w-5 h-5" /></button>
@@ -541,19 +650,30 @@ const AppContent = () => {
         <div className="bg-slate-900/60 backdrop-blur-md border-b border-slate-800/50 shadow-sm">
            <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col md:flex-row items-center justify-between gap-4">
               
-              {/* Centered Large Date Navigation */}
-              <div className="flex items-center gap-4 bg-slate-950/30 p-1.5 rounded-2xl border border-white/5 shadow-inner">
-                  <button onClick={handlePrevDay} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition active:scale-95 border border-slate-700/50" title="Previous Day">
-                    <IconChevronLeft className="w-5 h-5" />
-                  </button>
-                  <div className="flex flex-col items-center min-w-[140px] px-2">
-                    <span className="text-[10px] font-bold tracking-widest text-indigo-400 uppercase">{currentDate.toLocaleDateString('en-US', { weekday: 'long' })}</span>
-                    <span className="text-xl font-bold text-slate-100 leading-none mt-0.5">{currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+              {/* Context Title or Date Navigation */}
+              {appMode === 'watchlist' ? (
+                  <div className="flex items-center gap-3 bg-slate-950/30 p-2 px-4 rounded-xl border border-indigo-500/20 shadow-inner w-full md:w-auto">
+                    <IconBookmarkCheck className="w-5 h-5 text-emerald-400" />
+                    <div>
+                        <span className="text-xs font-bold tracking-widest text-indigo-400 uppercase block">Tracking</span>
+                        <span className="text-lg font-bold text-slate-100">My Watchlist</span>
+                    </div>
+                    <span className="ml-auto bg-slate-800 text-slate-300 text-xs font-bold px-2 py-1 rounded-md">{filteredReleases.length} items</span>
                   </div>
-                  <button onClick={handleNextDay} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition active:scale-95 border border-slate-700/50" title="Next Day">
-                    <IconChevronRight className="w-5 h-5" />
-                  </button>
-              </div>
+              ) : (
+                  <div className="flex items-center gap-4 bg-slate-950/30 p-1.5 rounded-2xl border border-white/5 shadow-inner">
+                      <button onClick={handlePrevDay} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition active:scale-95 border border-slate-700/50" title="Previous Day">
+                        <IconChevronLeft className="w-5 h-5" />
+                      </button>
+                      <div className="flex flex-col items-center min-w-[140px] px-2">
+                        <span className="text-[10px] font-bold tracking-widest text-indigo-400 uppercase">{currentDate.toLocaleDateString('en-US', { weekday: 'long' })}</span>
+                        <span className="text-xl font-bold text-slate-100 leading-none mt-0.5">{currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                      </div>
+                      <button onClick={handleNextDay} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition active:scale-95 border border-slate-700/50" title="Next Day">
+                        <IconChevronRight className="w-5 h-5" />
+                      </button>
+                  </div>
+              )}
 
               {/* Categories */}
               <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1 no-scrollbar mask-gradient-right">
@@ -567,26 +687,80 @@ const AppContent = () => {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {loading && releases.length === 0 ? (
+      <main 
+        className="max-w-7xl mx-auto px-4 py-8 flex-1 w-full"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        {loading ? (
           <div className="flex flex-col items-center justify-center py-20 animate-pulse">
             <IconLoader className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
-            <p className="text-slate-400 font-medium">Syncing with TMDB, AniList & Trakt...</p>
-            <p className="text-xs text-slate-600 mt-2">Querying direct APIs for schedule</p>
+            <p className="text-slate-400 font-medium">{appMode === 'watchlist' ? 'Syncing watchlist details...' : 'Syncing with TMDB, AniList & Trakt...'}</p>
+            {appMode !== 'watchlist' && <p className="text-xs text-slate-600 mt-2">Querying direct APIs for schedule ({settings.region || 'US'})</p>}
           </div>
         ) : error ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-4"><IconWifiOff className="w-8 h-8 text-red-500" /></div>
-            <h2 className="text-2xl font-bold text-slate-200 mb-2">Connection Issue</h2>
-            <p className="text-slate-400 max-w-md mb-6">{error}</p>
-            <button onClick={() => loadData(true)} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition flex items-center gap-2"><IconRefresh className="w-4 h-4" /> Try Again</button>
+          <div className="flex flex-col items-center justify-center py-20 text-center animate-in fade-in zoom-in duration-300">
+            <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-red-500/20 shadow-[0_0_20px_rgba(239,68,68,0.1)]">
+                <IconWifiOff className="w-10 h-10 text-red-500" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-100 mb-2">Oops! Connection Failed</h2>
+            <p className="text-slate-400 max-w-md mb-8 leading-relaxed">
+                {error.includes("404") 
+                    ? "We couldn't find the schedule for this specific date. It might be too far in the past or future." 
+                    : "We're having trouble connecting to the data sources. Please check your internet connection."}
+            </p>
+            <button 
+                onClick={() => loadData(true)} 
+                className="group relative px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold transition-all hover:shadow-lg hover:shadow-indigo-500/25 active:scale-95 flex items-center gap-2"
+            >
+                <IconRefresh className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" />
+                <span>Retry Connection</span>
+            </button>
           </div>
         ) : filteredReleases.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center opacity-80">
-            <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4 border border-slate-700"><IconSearch className="w-8 h-8 text-slate-500" /></div>
-            <h2 className="text-xl font-bold text-slate-200 mb-2">No results found</h2>
-            <p className="text-slate-400">Try adjusting your search or filters.</p>
-            {category !== 'All' && <button onClick={() => setCategory('All')} className="mt-4 text-indigo-400 hover:text-indigo-300 text-sm underline">View all categories</button>}
+          <div className="flex flex-col items-center justify-center py-20 text-center animate-in fade-in zoom-in duration-300">
+            <div className="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mb-6 border border-slate-700 shadow-inner">
+                {appMode === 'watchlist' ? <IconBookmark className="w-10 h-10 text-slate-600" /> : <IconSearch className="w-10 h-10 text-slate-600" />}
+            </div>
+            
+            <h2 className="text-2xl font-bold text-slate-200 mb-2">
+                {appMode === 'watchlist' ? "Watchlist is Empty" : "No Releases Found"}
+            </h2>
+            
+            <p className="text-slate-400 max-w-sm mb-8 leading-relaxed">
+                {appMode === 'watchlist' 
+                    ? "You haven't tracked any shows yet. Browse the daily feed and click the bookmark icon to add them here." 
+                    : searchQuery 
+                        ? `No matches found for "${searchQuery}". Try a different term or check for typos.`
+                        : "We couldn't find any releases matching your current filters for this day."}
+            </p>
+
+            <div className="flex flex-wrap items-center justify-center gap-3">
+                {appMode === 'watchlist' ? (
+                    <button onClick={() => { setAppMode('daily'); setCategory('All'); }} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition shadow-lg shadow-indigo-900/20">
+                        Browse Releases
+                    </button>
+                ) : (
+                    <>
+                        {(searchQuery || category !== 'All') && (
+                            <button 
+                                onClick={() => { setSearchQuery(''); setCategory('All'); }} 
+                                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg font-medium transition"
+                            >
+                                Clear Filters
+                            </button>
+                        )}
+                        <button 
+                            onClick={() => loadData(true)} 
+                            className="px-5 py-2.5 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 rounded-lg font-medium transition flex items-center gap-2"
+                        >
+                            <IconRefresh className="w-4 h-4" />
+                            Refresh Data
+                        </button>
+                    </>
+                )}
+            </div>
           </div>
         ) : (
           <div className={`${viewMode === 'grid' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6' : 'flex flex-col gap-4 max-w-4xl mx-auto'}`}>

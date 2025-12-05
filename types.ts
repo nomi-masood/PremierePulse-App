@@ -15,6 +15,7 @@ export interface ReleaseItem {
   link?: string;
   deepLink?: string; // Direct link to streaming service
   rating?: number; // 0-10 scale
+  popularity?: number; // For sorting
   subGenres?: string[];
 }
 
@@ -28,4 +29,11 @@ export interface GroundingMetadata {
 export interface FetchResponse {
   items: ReleaseItem[];
   groundingLinks: GroundingMetadata[];
+}
+
+export interface AppSettings {
+  notificationsEnabled: boolean;
+  alertTiming: 'at-release' | '15-min-before' | '1-hour-before';
+  soundEnabled: boolean;
+  region: string; // ISO 3166-1 alpha-2 code (e.g., 'US', 'GB')
 }
