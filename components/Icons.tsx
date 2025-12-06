@@ -27,7 +27,9 @@ import {
   ChevronRight,
   Star,
   Globe,
-  ArrowUpDown
+  ArrowUpDown,
+  Share2,
+  Check
 } from 'lucide-react';
 
 // Wrapper components to accept all props (style, title, etc.)
@@ -59,6 +61,9 @@ export const IconChevronRight = (props: ComponentProps<typeof ChevronRight>) => 
 export const IconStar = (props: ComponentProps<typeof Star>) => <Star {...props} />;
 export const IconGlobe = (props: ComponentProps<typeof Globe>) => <Globe {...props} />;
 export const IconSort = (props: ComponentProps<typeof ArrowUpDown>) => <ArrowUpDown {...props} />;
+export const IconShare = (props: ComponentProps<typeof Share2>) => <Share2 {...props} />;
+export const IconCheck = (props: ComponentProps<typeof Check>) => <Check {...props} />;
+export const IconStream = (props: ComponentProps<typeof MonitorPlay>) => <MonitorPlay {...props} />;
 
 // --- Platform Icon Configuration ---
 
@@ -267,6 +272,15 @@ export const PlatformIcon = ({ name, className = "w-4 h-4" }: { name: string; cl
         <IconMovie className={`${baseClasses} ${interactiveClasses} text-amber-500 drop-shadow-sm`} style={{ filter: `drop-shadow(0 0 1px currentColor)` }}>
             <title>{name}</title>
         </IconMovie>
+      );
+  }
+  
+  // Generic Streaming Fallback
+  if (['stream', 'play', 'plus', 'watch', 'video', 'go', 'fubo', 'sling'].some(k => n.includes(k)) && !n.includes('google')) {
+       return (
+        <IconStream className={`${baseClasses} ${interactiveClasses} text-indigo-400 drop-shadow-sm`}>
+            <title>{name}</title>
+        </IconStream>
       );
   }
   

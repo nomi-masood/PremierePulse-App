@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useMemo, useRef, ReactNode, Component } from 'react';
+import React, { useState, useEffect, useMemo, useRef, ReactNode } from 'react';
 import { fetchDailyReleases, fetchItemsByIds } from './services/geminiService';
 import { ReleaseItem, Category, FetchResponse, AppSettings } from './types';
 import { 
@@ -30,6 +29,8 @@ import {
   IconStar,
   IconGlobe,
   IconSort,
+  IconShare,
+  IconCheck,
   PlatformIcon
 } from './components/Icons';
 
@@ -169,13 +170,8 @@ interface ErrorBoundaryState {
   hasError: boolean;
 }
 
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = { hasError: false };
-
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false };
-  }
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false };
 
   static getDerivedStateFromError(error: any): ErrorBoundaryState { return { hasError: true }; }
   
@@ -255,9 +251,10 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message }: { isO
   );
 };
 
-const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNotify: (id: string, title: string) => Promise<void>; onToggleWatchlist: (id: string) => void; isNotified: boolean; isWatchlisted: boolean; searchQuery: string; }> = ({ item, viewMode, onToggleNotify, onToggleWatchlist, isNotified, isWatchlisted, searchQuery }) => {
+const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNotify: (id: string, title: string) => Promise<void>; onToggleWatchlist: (id: string) => void; isNotified: boolean; isWatchlisted: boolean; searchQuery: string; index: number; }> = ({ item, viewMode, onToggleNotify, onToggleWatchlist, isNotified, isWatchlisted, searchQuery, index }) => {
   const [imgState, setImgState] = useState<'loading' | 'low-res-loaded' | 'high-res-loaded' | 'error'>('loading');
   const [imgSrc, setImgSrc] = useState<string | undefined>(undefined);
+  const [isCopied, setIsCopied] = useState(false);
   
   const countdown = useCountdown(item.timestamp);
 
@@ -280,6 +277,30 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
       setImgSrc(FALLBACK_IMAGES[item.category] || FALLBACK_IMAGES['Series']);
     } else {
       setImgState('error');
+    }
+  };
+
+  const handleShare = async () => {
+    const shareData = {
+        title: `Watch ${item.title} on PremierePulse`,
+        text: `Check out ${item.title} (${item.category}) releasing today!`,
+        url: item.deepLink || item.link || window.location.href
+    };
+
+    if (navigator.share) {
+        try {
+            await navigator.share(shareData);
+        } catch (err) {
+            console.warn('Share canceled', err);
+        }
+    } else {
+        try {
+            await navigator.clipboard.writeText(shareData.url);
+            setIsCopied(true);
+            setTimeout(() => setIsCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy', err);
+        }
     }
   };
 
@@ -316,9 +337,15 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
     </div>
   );
 
+  const animationDelay = Math.min(index * 50, 2000); // Cap at 2s delay
+  const animationStyle = { animationDelay: `${animationDelay}ms`, animationFillMode: 'both' };
+
   if (viewMode === 'list') {
     return (
-      <div className="group relative bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col md:flex-row">
+      <div 
+        className="group relative bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col md:flex-row animate-fade-in-up"
+        style={animationStyle as React.CSSProperties}
+      >
         <div className="relative w-full md:w-48 h-48 md:h-auto shrink-0 bg-slate-900 overflow-hidden">
           {imgState === 'loading' && <div className="absolute inset-0 bg-slate-800 animate-pulse z-10" />}
           {lowResUrl && imgState !== 'error' && <img src={lowResUrl} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 blur-sm scale-105 ${imgState === 'high-res-loaded' ? 'opacity-0' : 'opacity-100'}`} onLoad={handleLowResLoad} alt="" />}
@@ -333,6 +360,7 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
                 <RatingDisplay />
               </div>
               <div className="flex items-center gap-1">
+                 <button onClick={handleShare} className="p-2 rounded-lg transition-all hover:bg-slate-700 text-slate-400 hover:text-white" title={isCopied ? "Copied!" : "Share"}>{isCopied ? <IconCheck className="w-5 h-5 text-emerald-400" /> : <IconShare className="w-5 h-5" />}</button>
                  <button onClick={() => onToggleWatchlist(item.id)} className={`p-2 rounded-lg transition-all ${isWatchlisted ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-slate-700 text-slate-400 hover:text-white'}`}>{isWatchlisted ? <IconBookmarkCheck className="w-5 h-5" /> : <IconBookmark className="w-5 h-5" />}</button>
                  <button onClick={() => onToggleNotify(item.id, item.title)} className={`p-2 rounded-lg transition-all ${isNotified ? 'bg-indigo-500/10 text-indigo-400' : 'hover:bg-slate-700 text-slate-400 hover:text-white'}`}>{isNotified ? <IconBellActive className="w-5 h-5" /> : <IconBell className="w-5 h-5" />}</button>
               </div>
@@ -362,7 +390,10 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
   }
 
   return (
-    <div className="group relative bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-indigo-500/20 flex flex-col h-full">
+    <div 
+      className="group relative bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-indigo-500/50 rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-indigo-500/20 flex flex-col h-full animate-fade-in-up"
+      style={animationStyle as React.CSSProperties}
+    >
       <div className="absolute inset-0 opacity-0 group-hover:opacity-10 pointer-events-none transition-opacity duration-500 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-500 via-purple-500 to-transparent" />
       
       {/* Image Container */}
@@ -418,6 +449,9 @@ const ReleaseCard: React.FC<{ item: ReleaseItem; viewMode: ViewMode; onToggleNot
         
         {/* Actions */}
         <div className={`flex items-center gap-2 pt-3 border-t border-slate-700/50 ${platforms.length === 0 ? 'mt-auto' : ''}`}>
+          <button onClick={handleShare} className="p-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white transition-all flex items-center justify-center" title={isCopied ? "Copied!" : "Share"}>
+             {isCopied ? <IconCheck className="w-4 h-4 text-emerald-400" /> : <IconShare className="w-4 h-4" />}
+          </button>
           <button onClick={() => onToggleWatchlist(item.id)} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${isWatchlisted ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white'}`}>{isWatchlisted ? <><IconBookmarkCheck className="w-4 h-4" /> Added</> : <><IconBookmark className="w-4 h-4" /> Watchlist</>}</button>
           <button onClick={() => onToggleNotify(item.id, item.title)} className={`p-2 rounded-lg transition-all ${isNotified ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'}`} title="Toggle Notification">{isNotified ? <IconBellActive className="w-5 h-5" /> : <IconBell className="w-5 h-5" />}</button>
         </div>
@@ -778,9 +812,9 @@ const AppContent = () => {
           </div>
         ) : (
           <div className={`${viewMode === 'grid' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6' : 'flex flex-col gap-4 max-w-4xl mx-auto'}`}>
-            {filteredReleases.map(item => (
+            {filteredReleases.map((item, index) => (
               <ReleaseCard 
-                key={item.id} 
+                key={`${item.id}-${viewMode}`} 
                 item={item} 
                 viewMode={viewMode}
                 onToggleNotify={handleToggleNotify}
@@ -788,6 +822,7 @@ const AppContent = () => {
                 isNotified={notifications.includes(item.id)}
                 isWatchlisted={watchlist.includes(item.id)}
                 searchQuery={searchQuery}
+                index={index}
               />
             ))}
           </div>
